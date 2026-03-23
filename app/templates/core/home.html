@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Tableau de bord{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-1">Rapports</h1>
+        <p class="text-muted mb-0">Tous les utilisateurs peuvent consulter tous les rapports.</p>
+    </div>
+    {% if can_create %}
+        <a href="{% url 'report_create' %}" class="btn btn-primary">Nouveau rapport</a>
+    {% endif %}
+</div>
+
+<div class="row g-3">
+    {% for report in reports %}
+        <div class="col-md-6 col-xl-4">
+            <div class="card h-100 shadow-sm card-hover border-0">
+                <div class="card-body">
+                    <h2 class="h5 mb-2">
+                        <a class="text-decoration-none" href="{% url 'report_detail' report.id %}">{{ report.title }}</a>
+                    </h2>
+                    <p class="mb-1"><strong>Client :</strong> {{ report.client }}</p>
+                    <p class="mb-1"><strong>Date :</strong> {{ report.report_date }}</p>
+                    <p class="mb-1"><strong>Statut :</strong> {{ report.get_status_display }}</p>
+                    <p class="mb-0"><strong>Auteur :</strong> {{ report.author.username }}</p>
+                </div>
+                <div class="card-footer bg-white border-0 pt-0">
+                    <a class="btn btn-sm btn-outline-primary" href="{% url 'report_detail' report.id %}">Voir le detail</a>
+                </div>
+            </div>
+        </div>
+    {% empty %}
+        <div class="col-12">
+            <div class="alert alert-secondary mb-0">Aucun rapport disponible.</div>
+        </div>
+    {% endfor %}
+</div>
+{% endblock %}

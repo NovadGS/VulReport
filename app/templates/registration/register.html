@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Inscription Viewer{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-6 col-md-8">
+        <div class="card shadow-sm card-hover border-0">
+            <div class="card-body p-4">
+                <h1 class="h4 mb-3">Creer un compte Viewer</h1>
+                <form method="post">
+                    {% csrf_token %}
+                    {{ form.as_p }}
+                    <button type="submit" class="btn btn-primary w-100">S'inscrire</button>
+                </form>
+                <a href="{% url 'login' %}" class="btn btn-link w-100 mt-2">Retour a la connexion</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

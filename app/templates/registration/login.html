@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Connexion{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-5">
+        <div class="card shadow-sm card-hover border-0">
+            <div class="card-body">
+                <h1 class="h4 mb-3">Connexion</h1>
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label class="form-label" for="{{ form.username.id_for_label }}">Nom d'utilisateur</label>
+                        {{ form.username.as_widget }}
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="{{ form.password.id_for_label }}">Mot de passe</label>
+                        {{ form.password.as_widget }}
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">Se connecter</button>
+                </form>
+                <hr>
+                <p class="mb-2 text-muted">Pas de compte ?</p>
+                <a href="{% url 'register' %}" class="btn btn-outline-secondary w-100">Creer un compte Viewer</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

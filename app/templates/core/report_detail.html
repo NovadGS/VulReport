@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}{{ report.title }}{% endblock %}
+{% block content %}
+<div class="card shadow-sm border-0">
+    <div class="card-body p-4">
+        <div class="d-flex justify-content-between align-items-start">
+            <h1 class="h3">{{ report.title }}</h1>
+            {% if can_edit %}
+                <a href="{% url 'report_edit' report.id %}" class="btn btn-primary btn-sm">Modifier</a>
+            {% endif %}
+        </div>
+        <hr>
+        <p><strong>Client :</strong> {{ report.client }}</p>
+        <p><strong>Date :</strong> {{ report.report_date }}</p>
+        <p><strong>Statut :</strong> {{ report.get_status_display }}</p>
+        <p class="mb-0"><strong>Auteur :</strong> {{ report.author.username }}</p>
+    </div>
+</div>
+{% endblock %}
