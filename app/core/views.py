@@ -1,11 +1,16 @@
 from django.contrib import messages
-from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.tokens import default_token_generator
 from django.core.exceptions import PermissionDenied
+from django.core.mail import send_mail
+from django.shortcuts import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
+from django.utils.encoding import force_bytes, force_str
+from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 
 from .forms import ReportForm, ViewerRegistrationForm
-from .models import Report, UserRole
+from .models import Report, User, UserRole
 
 
 def register_viewer(request):
@@ -16,13 +21,59 @@ def register_viewer(request):
         form = ViewerRegistrationForm(request.POST)
         if form.is_valid():
             user = form.save()
-            login(request, user)
-            messages.success(request, "Compte Viewer cree avec succes.")
-            return redirect("home")
+            uid = urlsafe_base64_encode(force_bytes(user.pk))
+            token = default_token_generator.make_token(user)
+            activation_link = request.build_absolute_uri(
+                reverse("activate_account", kwargs={"uidb64": uid, "token": token})
+            )
+            message = (
+                "Bonjour,\n\n"
+                "Votre compte Viewer VulnReport a ete cree.\n"
+                "Veuillez confirmer votre compte en cliquant sur ce lien :\n"
+                f"{activation_link}\n\n"
+                "Si vous n'etes pas a l'origine de cette demande, ignorez cet email."
+            )
+            try:
+                send_mail(
+                    subject="Confirmation de votre compte VulnReport",
+                    message=message,
+                    from_email=None,
+                    recipient_list=[user.email],
+                    fail_silently=False,
+                )
+            except Exception:
+                user.delete()
+                messages.error(
+                    request,
+                    "Impossible d'envoyer l'email de confirmation. Verifiez la configuration SMTP.",
+                )
+                return render(request, "registration/register.html", {"form": form})
+            messages.success(
+                request,
+                "Compte cree. Un email de confirmation a ete envoye pour activer votre acces.",
+            )
+            return redirect("login")
+        messages.error(request, "Le formulaire contient des erreurs. Verifiez les champs puis reessayez.")
     else:
         form = ViewerRegistrationForm()
 
     return render(request, "registration/register.html", {"form": form})
+
+
+def activate_account(request, uidb64: str, token: str):
+    try:
+        uid = force_str(urlsafe_base64_decode(uidb64))
+        user = User.objects.get(pk=uid)
+    except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+        user = None
+
+    if user and default_token_generator.check_token(user, token):
+        user.is_active = True
+        user.save(update_fields=["is_active"])
+        messages.success(request, "Votre compte est active. Vous pouvez maintenant vous connecter.")
+        return redirect("login")
+
+    return HttpResponse("Lien d'activation invalide ou expire.", status=400)
 
 
 @login_required

@@ -13,14 +13,22 @@ class ViewerRegistrationForm(UserCreationForm):
         user = super().save(commit=False)
         user.role = UserRole.VIEWER
         user.is_staff = False
+        user.is_active = False
         if commit:
             user.save()
         return user
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields["email"].required = True
         for field in self.fields.values():
             field.widget.attrs["class"] = "form-control"
+
+    def clean_email(self):
+        email = self.cleaned_data["email"].strip().lower()
+        if User.objects.filter(email=email).exists():
+            raise forms.ValidationError("Un compte existe deja avec cet email.")
+        return email
 
 
 class ReportForm(forms.ModelForm):

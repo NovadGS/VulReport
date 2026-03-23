@@ -94,6 +94,21 @@ LOGIN_URL = "login"
 LOGIN_REDIRECT_URL = "home"
 LOGOUT_REDIRECT_URL = "login"
 
+# Email configuration for account activation
+# En dev local, si aucune credential SMTP n'est fournie, on bascule automatiquement en console.
+EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")
+EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "").strip()
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "").strip()
+EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True").lower() == "true"
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "noreply@vulnreport.local")
+
+_email_backend = os.getenv("EMAIL_BACKEND", "").strip()
+if _email_backend:
+    EMAIL_BACKEND = _email_backend
+else:
+    EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend" if (EMAIL_HOST_USER and EMAIL_HOST_PASSWORD) else "django.core.mail.backends.console.EmailBackend"
+
 # Security headers and cookie hardening
 SECURE_BROWSER_XSS_FILTER = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
