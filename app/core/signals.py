@@ -9,11 +9,11 @@ from .models import AuditAction, AuditLog, User
 def log_user_role_change(sender, instance: User, created: bool, **kwargs):
     action = AuditAction.CREATE if created else AuditAction.PRIVILEGE_CHANGE
     AuditLog.objects.create(
-        user=instance,
+        actor=instance,
         action=action,
         object_type="user",
-        object_id=str(instance.pk),
-        details={"role": instance.role, "created": created},
+        object_id=instance.pk,
+        metadata={"role": instance.role, "created": created},
     )
 
 
@@ -24,9 +24,9 @@ def log_group_membership_change(sender, instance: User, action: str, pk_set, **k
 
     groups = list(Group.objects.filter(pk__in=pk_set).values_list("name", flat=True)) if pk_set else []
     AuditLog.objects.create(
-        user=instance,
+        actor=instance,
         action=AuditAction.PRIVILEGE_CHANGE,
         object_type="user_group",
-        object_id=str(instance.pk),
-        details={"change_type": action, "groups": groups},
+        object_id=instance.pk,
+        metadata={"change_type": action, "groups": groups},
     )

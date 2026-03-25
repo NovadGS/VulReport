@@ -19,8 +19,8 @@
                     <h2 class="h5 mb-2">
                         <a class="text-decoration-none" href="{% url 'report_detail' report.id %}">{{ report.title }}</a>
                     </h2>
-                    <p class="mb-1"><strong>Client :</strong> {{ report.client }}</p>
-                    <p class="mb-1"><strong>Date :</strong> {{ report.report_date }}</p>
+                    <p class="mb-1"><strong>Contexte :</strong> {{ report.context }}</p>
+                    <p class="mb-1"><strong>Date :</strong> {{ report.created_at }}</p>
                     <p class="mb-1"><strong>Statut :</strong> {{ report.get_status_display }}</p>
                     <p class="mb-0"><strong>Auteur :</strong> {{ report.author.username }}</p>
                 </div>

@@ -10,8 +10,8 @@
             {% endif %}
         </div>
         <hr>
-        <p><strong>Client :</strong> {{ report.client }}</p>
-        <p><strong>Date :</strong> {{ report.report_date }}</p>
+        <p><strong>Contexte :</strong> {{ report.context }}</p>
+        <p><strong>Date :</strong> {{ report.created_at }}</p>
         <p><strong>Statut :</strong> {{ report.get_status_display }}</p>
         <p class="mb-0"><strong>Auteur :</strong> {{ report.author.username }}</p>
     </div>

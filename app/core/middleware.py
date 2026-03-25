@@ -25,18 +25,18 @@ class AuditLogMiddleware:
 @receiver(user_logged_in)
 def log_user_logged_in(sender, request, user, **kwargs):
     AuditLog.objects.create(
-        user=user,
+        actor=user,
         action=AuditAction.LOGIN,
         ip_address=getattr(request, "client_ip", _extract_ip(request.META)),
-        details={"source": "django_auth"},
+        metadata={"source": "django_auth"},
     )
 
 
 @receiver(user_logged_out)
 def log_user_logged_out(sender, request, user, **kwargs):
     AuditLog.objects.create(
-        user=user,
+        actor=user,
         action=AuditAction.LOGOUT,
         ip_address=getattr(request, "client_ip", _extract_ip(request.META)) if request else None,
-        details={"source": "django_auth"},
+        metadata={"source": "django_auth"},
     )
