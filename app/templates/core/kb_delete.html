@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Supprimer KB{% endblock %}
+{% block content %}
+<div class="mb-4">
+    <h1 class="h3 mb-1">Supprimer la fiche KB</h1>
+    <p class="text-muted mb-0">Cette action est irréversible.</p>
+</div>
+
+<div class="card shadow-sm border-0">
+    <div class="card-body">
+        <p class="mb-4">Confirmer la suppression de <strong>{{ entry.name }}</strong> ?</p>
+        <form method="post">
+            {% csrf_token %}
+            <div class="d-flex gap-2">
+                <button class="btn btn-danger" type="submit">Supprimer</button>
+                <a class="btn btn-outline-secondary" href="{% url 'kb_detail' entry.id %}">Annuler</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Partage public - {{ report.title }}{% endblock %}
+{% block content %}
+<div class="card shadow-sm border-0">
+    <div class="card-body p-4">
+        <h1 class="h4">{{ report.title }}</h1>
+        <p class="text-muted mb-3">Lien public sécurisé (lecture seule)</p>
+        <p><strong>Contexte :</strong> {{ report.context }}</p>
+        <p><strong>Statut :</strong> {{ report.get_status_display }}</p>
+        <h2 class="h5 mt-4">Findings</h2>
+        {% for f in findings %}
+            <div class="border rounded p-3 mb-2">
+                <div class="fw-semibold">{{ f.title }}</div>
+                <div class="small text-muted">CVSS {{ f.cvss_score }} · {{ f.get_severity_level_display }}</div>
+                <div class="mt-2">{{ f.description }}</div>
+            </div>
+        {% empty %}
+            <div class="text-muted">Aucun finding.</div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

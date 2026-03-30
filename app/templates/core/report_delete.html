@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Supprimer le rapport{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-7">
+        <div class="card shadow-sm border-0">
+            <div class="card-body p-4">
+                <h1 class="h4 mb-3">Supprimer le rapport</h1>
+                <p class="mb-3">
+                    Tu es sur le point de supprimer <strong>{{ report.title }}</strong>.
+                </p>
+                <p class="text-danger mb-4">
+                    Cette action est definitive.
+                </p>
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-danger">Supprimer definitivement</button>
+                        <a class="btn btn-outline-secondary" href="{% url 'report_detail' report.id %}">Annuler</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

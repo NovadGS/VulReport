@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}{{ organization.name }}{% endblock %}
+{% block content %}
+<div class="row g-4">
+    <div class="col-lg-5">
+        <div class="card shadow-sm border-0">
+            <div class="card-body">
+                <h1 class="h5">{{ organization.name }}</h1>
+                <h2 class="h6 mt-3">Ajouter un membre</h2>
+                <form method="post" action="{% url 'organization_add_member' organization.id %}">
+                    {% csrf_token %}
+                    {{ member_form.as_p }}
+                    <button type="submit" class="btn btn-outline-primary">Ajouter</button>
+                </form>
+                <hr>
+                <h2 class="h6">Membres</h2>
+                {% for m in memberships %}
+                    <div class="border rounded p-2 mb-2">
+                        <div class="small mb-2"><strong>{{ m.user.username }}</strong> - {{ m.get_role_display }}</div>
+                        <form method="post" action="{% url 'organization_update_member_role' organization.id m.user.id %}" class="d-flex gap-2">
+                            {% csrf_token %}
+                            <select name="role" class="form-select form-select-sm">
+                                <option value="owner" {% if m.role == "owner" %}selected{% endif %}>Owner</option>
+                                <option value="admin" {% if m.role == "admin" %}selected{% endif %}>Admin</option>
+                                <option value="member" {% if m.role == "member" %}selected{% endif %}>Member</option>
+                            </select>
+                            <button class="btn btn-sm btn-outline-primary" type="submit">Role</button>
+                        </form>
+                        {% if m.role != "owner" %}
+                        <form method="post" action="{% url 'organization_remove_member' organization.id m.user.id %}" class="mt-2">
+                            {% csrf_token %}
+                            <button class="btn btn-sm btn-outline-danger" type="submit">Retirer</button>
+                        </form>
+                        {% endif %}
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-7">
+        <div class="card shadow-sm border-0">
+            <div class="card-body">
+                <h2 class="h6">Rapports partagés avec cette organisation</h2>
+                {% for s in shares %}
+                    <div class="border rounded p-2 mb-2">
+                        <a href="{% url 'report_detail' s.report.id %}">{{ s.report.title }}</a>
+                    </div>
+                {% empty %}
+                    <div class="text-muted">Aucun rapport partagé.</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

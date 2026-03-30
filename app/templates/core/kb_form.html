@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}{% if is_edit %}Éditer{% else %}Créer{% endif %} KB{% endblock %}
+{% block content %}
+<div class="mb-4">
+    <h1 class="h3 mb-1">{% if is_edit %}Éditer{% else %}Créer{% endif %} une fiche KB</h1>
+    <p class="text-muted mb-0">Réservé aux administrateurs.</p>
+</div>
+
+<div class="card shadow-sm border-0">
+    <div class="card-body">
+        <form method="post" novalidate>
+            {% csrf_token %}
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label" for="{{ form.name.id_for_label }}">Nom</label>
+                    {{ form.name }}
+                    {% if form.name.errors %}<div class="text-danger small">{{ form.name.errors }}</div>{% endif %}
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label" for="{{ form.category.id_for_label }}">Catégorie</label>
+                    {{ form.category }}
+                    {% if form.category.errors %}<div class="text-danger small">{{ form.category.errors }}</div>{% endif %}
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label" for="{{ form.default_severity.id_for_label }}">Sévérité</label>
+                    {{ form.default_severity }}
+                    {% if form.default_severity.errors %}<div class="text-danger small">{{ form.default_severity.errors }}</div>{% endif %}
+                </div>
+                <div class="col-12">
+                    <label class="form-label" for="{{ form.description.id_for_label }}">Description</label>
+                    {{ form.description }}
+                    {% if form.description.errors %}<div class="text-danger small">{{ form.description.errors }}</div>{% endif %}
+                </div>
+                <div class="col-12">
+                    <label class="form-label" for="{{ form.recommendation.id_for_label }}">Recommandations</label>
+                    {{ form.recommendation }}
+                    {% if form.recommendation.errors %}<div class="text-danger small">{{ form.recommendation.errors }}</div>{% endif %}
+                </div>
+                <div class="col-12">
+                    <label class="form-label" for="{{ form.references.id_for_label }}">Références</label>
+                    {{ form.references }}
+                    {% if form.references.errors %}<div class="text-danger small">{{ form.references.errors }}</div>{% endif %}
+                </div>
+            </div>
+
+            <div class="mt-4 d-flex gap-2">
+                <button class="btn btn-primary" type="submit">{% if is_edit %}Enregistrer{% else %}Créer{% endif %}</button>
+                <a class="btn btn-outline-secondary" href="{% url 'kb_list' %}">Annuler</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

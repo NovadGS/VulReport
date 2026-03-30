@@ -5,15 +5,151 @@
     <div class="card-body p-4">
         <div class="d-flex justify-content-between align-items-start">
             <h1 class="h3">{{ report.title }}</h1>
-            {% if can_edit %}
-                <a href="{% url 'report_edit' report.id %}" class="btn btn-primary btn-sm">Modifier</a>
-            {% endif %}
+            <div class="d-flex gap-2">
+                <a href="{% url 'report_pdf' report.id %}" class="btn btn-outline-primary btn-sm">PDF</a>
+                {% if can_edit %}
+                    <a href="{% url 'report_edit' report.id %}" class="btn btn-primary btn-sm">Modifier</a>
+                    <a href="{% url 'report_delete' report.id %}" class="btn btn-outline-danger btn-sm">Supprimer</a>
+                {% endif %}
+            </div>
         </div>
         <hr>
         <p><strong>Contexte :</strong> {{ report.context }}</p>
         <p><strong>Date :</strong> {{ report.created_at }}</p>
         <p><strong>Statut :</strong> {{ report.get_status_display }}</p>
+        <p><strong>Visibilité :</strong> {% if report.is_public %}Publié (tout le monde){% else %}Privé (pentester){% endif %}</p>
+        {% if report.approved_by %}<p><strong>Validé par :</strong> {{ report.approved_by.username }} le {{ report.approved_at }}</p>{% endif %}
         <p class="mb-0"><strong>Auteur :</strong> {{ report.author.username }}</p>
+    </div>
+</div>
+
+{% if can_edit %}
+<div class="card shadow-sm border-0 mt-4">
+    <div class="card-body p-4">
+        <h2 class="h5 mb-3">Ajouter un finding</h2>
+
+        <form method="post" action="{% url 'report_add_finding_from_cve' report.id %}" class="row g-2 align-items-end">
+            {% csrf_token %}
+            <div class="col-md-6">
+                <label class="form-label" for="cve_id">CVE (auto-remplissage)</label>
+                <input id="cve_id" name="cve_id" class="form-control" placeholder="CVE-2024-3094" required>
+            </div>
+            <div class="col-md-3">
+                <button class="btn btn-primary w-100" type="submit">Créer depuis CVE</button>
+            </div>
+        </form>
+
+        <hr class="my-4">
+
+        <form method="post" action="{% url 'report_import_tool_report' report.id %}" enctype="multipart/form-data" class="row g-2 align-items-end">
+            {% csrf_token %}
+            <div class="col-md-9">
+                <label class="form-label" for="file">Importer un rapport (ZAP/Bandit JSON)</label>
+                <input id="file" name="file" type="file" class="form-control" accept=".json,application/json" required>
+            </div>
+            <div class="col-md-3">
+                <button class="btn btn-outline-primary w-100" type="submit">Importer</button>
+            </div>
+        </form>
+        <p class="text-muted small mb-0 mt-2">
+            Formats supportés: Bandit JSON (`bandit -r app -f json -o bandit.json`), ZAP JSON (rapport JSON).
+        </p>
+    </div>
+</div>
+{% endif %}
+
+<div class="card shadow-sm border-0 mt-4">
+    <div class="card-body p-4">
+        <h2 class="h5 mb-3">Workflow & partage</h2>
+        <div class="d-flex flex-wrap gap-2 mb-3">
+            {% if can_edit and report.status == "draft" %}
+            <form method="post" action="{% url 'report_request_review' report.id %}">
+                {% csrf_token %}
+                <button class="btn btn-outline-warning btn-sm" type="submit">Passer en revue</button>
+            </form>
+            {% endif %}
+            {% if request.user.role == "admin" and report.status == "in_review" %}
+            <form method="post" action="{% url 'report_approve' report.id %}">
+                {% csrf_token %}
+                <button class="btn btn-success btn-sm" type="submit">Valider le rapport</button>
+            </form>
+            {% endif %}
+        </div>
+
+        {% if can_edit %}
+        <form method="post" action="{% url 'report_generate_share_link' report.id %}" class="row g-2 align-items-end mb-3">
+            {% csrf_token %}
+            <div class="col-md-3">
+                <label class="form-label">Expiration (jours)</label>
+                <input type="number" min="1" max="90" name="days" class="form-control" value="7">
+            </div>
+            <div class="col-md-3">
+                <button class="btn btn-outline-primary w-100" type="submit">Générer lien public</button>
+            </div>
+        </form>
+        {% if report.public_share_token %}
+            <div class="alert alert-light border">
+                <div><strong>Lien sécurisé :</strong></div>
+                <code>{{ request.scheme }}://{{ request.get_host }}{% url 'report_public_share' report.public_share_token %}</code>
+                <div class="small text-muted mt-1">Expire le {{ report.public_share_expires_at|default:"N/A" }}</div>
+            </div>
+        {% endif %}
+
+        <form method="post" action="{% url 'report_share_with_org' report.id %}" class="row g-2 align-items-end">
+            {% csrf_token %}
+            <div class="col-md-6">
+                <label class="form-label">Partager à une organisation</label>
+                <select name="org_id" class="form-select">
+                    {% for org in available_orgs %}
+                        <option value="{{ org.id }}">{{ org.name }}</option>
+                    {% empty %}
+                        <option value="">Aucune organisation</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <button class="btn btn-outline-secondary w-100" type="submit">Partager</button>
+            </div>
+        </form>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card shadow-sm border-0 mt-4">
+    <div class="card-body p-4">
+        <h2 class="h5 mb-3">Findings</h2>
+        {% for f in findings %}
+            <div class="border rounded p-3 mb-3 bg-white">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <div class="fw-semibold">{{ f.title }}</div>
+                        {% if f.cve_id %}<div class="text-muted small">{{ f.cve_id }}</div>{% endif %}
+                    </div>
+                    <div class="text-muted small">
+                        Sévérité: {{ f.get_severity_level_display }}{% if f.cvss_score %} · CVSS {{ f.cvss_score }}{% endif %}
+                    </div>
+                </div>
+                {% if f.description %}<p class="mb-2 mt-2">{{ f.description }}</p>{% endif %}
+                {% if f.recommendation %}<p class="mb-2"><strong>Reco:</strong> {{ f.recommendation }}</p>{% endif %}
+                {% if f.references %}<pre class="mb-0">{{ f.references }}</pre>{% endif %}
+                <hr>
+                <div class="small fw-semibold mb-2">Commentaires internes</div>
+                {% for c in f.comments.all %}
+                    <div class="small mb-1"><strong>{{ c.author.username }}</strong> · {{ c.created_at }}<br>{{ c.body }}</div>
+                {% empty %}
+                    <div class="text-muted small mb-2">Aucun commentaire.</div>
+                {% endfor %}
+                {% if user.is_authenticated %}
+                <form method="post" action="{% url 'finding_add_comment' report.id f.id %}" class="mt-2">
+                    {% csrf_token %}
+                    {{ comment_form.body }}
+                    <button class="btn btn-sm btn-outline-primary mt-2" type="submit">Ajouter commentaire</button>
+                </form>
+                {% endif %}
+            </div>
+        {% empty %}
+            <div class="alert alert-secondary mb-0">Aucun finding pour ce rapport.</div>
+        {% endfor %}
     </div>
 </div>
 {% endblock %}

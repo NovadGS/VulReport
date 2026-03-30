@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Base de connaissance{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-1">Base de connaissance</h1>
+        <p class="text-muted mb-0">Fiches vulnérabilités consultables par tous.</p>
+    </div>
+    {% if request.user.role == "admin" %}
+        <a class="btn btn-primary" href="{% url 'kb_create' %}">Nouvelle fiche</a>
+    {% endif %}
+</div>
+
+<div class="row g-3">
+    {% for entry in entries %}
+        <div class="col-md-6 col-xl-4">
+            <div class="card h-100 shadow-sm card-hover border-0">
+                <div class="card-body">
+                    <h2 class="h5 mb-2">
+                        <a class="text-decoration-none" href="{% url 'kb_detail' entry.id %}">{{ entry.name }}</a>
+                    </h2>
+                    <p class="mb-1"><strong>Catégorie :</strong> {{ entry.get_category_display }}</p>
+                    <p class="mb-0"><strong>Sévérité :</strong> {{ entry.get_default_severity_display }}</p>
+                </div>
+                <div class="card-footer bg-white border-0 pt-0">
+                    <a class="btn btn-sm btn-outline-primary" href="{% url 'kb_detail' entry.id %}">Voir</a>
+                </div>
+            </div>
+        </div>
+    {% empty %}
+        <div class="col-12">
+            <div class="alert alert-secondary mb-0">Aucune fiche pour le moment.</div>
+        </div>
+    {% endfor %}
+</div>
+{% endblock %}

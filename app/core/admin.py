@@ -4,8 +4,12 @@ from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from .models import (
     AuditLog,
     Finding,
+    FindingComment,
     KnowledgeBase,
+    Organization,
+    OrganizationMembership,
     Report,
+    ReportOrganizationShare,
     TopDevice,
     User,
     WebAuthnCredential,
@@ -35,11 +39,37 @@ class FindingAdmin(admin.ModelAdmin):
     search_fields = ("title", "report__title", "kb_entry__name")
 
 
+@admin.register(FindingComment)
+class FindingCommentAdmin(admin.ModelAdmin):
+    list_display = ("finding", "author", "created_at", "is_internal")
+    list_filter = ("is_internal", "created_at")
+    search_fields = ("finding__title", "author__username", "body")
+
+
 @admin.register(KnowledgeBase)
 class KnowledgeBaseAdmin(admin.ModelAdmin):
     list_display = ("name", "category", "default_severity", "updated_at")
     list_filter = ("category", "default_severity")
     search_fields = ("name", "category")
+
+
+@admin.register(Organization)
+class OrganizationAdmin(admin.ModelAdmin):
+    list_display = ("name", "owner", "created_at")
+    search_fields = ("name", "owner__username")
+
+
+@admin.register(OrganizationMembership)
+class OrganizationMembershipAdmin(admin.ModelAdmin):
+    list_display = ("organization", "user", "role", "created_at")
+    list_filter = ("role",)
+    search_fields = ("organization__name", "user__username")
+
+
+@admin.register(ReportOrganizationShare)
+class ReportOrganizationShareAdmin(admin.ModelAdmin):
+    list_display = ("report", "organization", "created_by", "created_at")
+    search_fields = ("report__title", "organization__name", "created_by__username")
 
 
 @admin.register(AuditLog)
@@ -52,9 +82,10 @@ class AuditLogAdmin(admin.ModelAdmin):
 
 @admin.register(TopDevice)
 class TopDeviceAdmin(admin.ModelAdmin):
-    list_display = ("id", "user", "secret_key", "is_confirmed", "created_at")
+    list_display = ("id", "user", "is_confirmed", "created_at")
     list_filter = ("is_confirmed", "created_at")
-    search_fields = ("user__username", "secret_key")
+    search_fields = ("user__username",)
+    readonly_fields = ("created_at",)
 
 
 @admin.register(WebAuthnCredential)

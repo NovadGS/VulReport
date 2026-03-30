@@ -22,6 +22,9 @@ class User(AbstractUser):
     updated_at = models.DateTimeField(auto_now=True, db_column="updated_at")
 
     role = models.CharField(max_length=20, choices=UserRole.choices, default=UserRole.VIEWER, db_index=True)
+    company_name = models.CharField(max_length=255, blank=True, default="")
+    profile_photo = models.ImageField(upload_to="profiles/", blank=True, null=True)
+    company_logo = models.ImageField(upload_to="companies/", blank=True, null=True)
     mfa_required = models.BooleanField(default=False, db_column="mfa_required")
     mfa_enrolled = models.BooleanField(default=False, db_column="is_mfa_verified")
     top_enabled = models.BooleanField(default=False, db_column="top_enabled")
@@ -58,11 +61,32 @@ class Report(models.Model):
     title = models.CharField(max_length=255)
     context = models.TextField()
     executive_summary = models.TextField(blank=True, default="")
+    company_name = models.CharField(max_length=255, blank=True, default="")
+    company_logo_url = models.URLField(blank=True, default="")
+    custom_header = models.CharField(max_length=255, blank=True, default="")
+    public_share_token = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    public_share_expires_at = models.DateTimeField(null=True, blank=True)
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="approved_reports",
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
+    confidentiality_mark = models.CharField(max_length=30, blank=True, default="CONFIDENTIEL")
+    is_public = models.BooleanField(default=False, db_index=True)
     status = models.CharField(
         max_length=20, choices=ReportStatus.choices, default=ReportStatus.DRAFT, db_index=True
     )
     author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="reports")
     viewers = models.ManyToManyField(settings.AUTH_USER_MODEL, blank=True, through="ReportViewer", related_name="assigned_reports")
+    organizations = models.ManyToManyField(
+        "Organization",
+        blank=True,
+        through="ReportOrganizationShare",
+        related_name="shared_reports",
+    )
     created_at = models.DateTimeField(auto_now_add=True, db_column="created_at")
     updated_at = models.DateTimeField(auto_now=True, db_column="updated_at")
 
@@ -145,6 +169,8 @@ class WebAuthnCredential(models.Model):
 class Finding(models.Model):
     report = models.ForeignKey(Report, on_delete=models.CASCADE, related_name="findings")
     kb_entry = models.ForeignKey("KnowledgeBase", on_delete=models.SET_NULL, null=True, blank=True, related_name="findings")
+    cve_id = models.CharField(max_length=20, blank=True, default="", db_index=True)
+    source_urls = models.JSONField(default=list, blank=True)
     title = models.CharField(max_length=255)
     description = models.TextField()
     proof_poc = models.TextField(blank=True, default="")
@@ -171,6 +197,64 @@ class Finding(models.Model):
 
     def __str__(self) -> str:
         return self.title
+
+
+class FindingComment(models.Model):
+    finding = models.ForeignKey(Finding, on_delete=models.CASCADE, related_name="comments")
+    author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="finding_comments")
+    body = models.TextField()
+    is_internal = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "finding_comments"
+        ordering = ("created_at",)
+
+
+class OrganizationRole(models.TextChoices):
+    OWNER = "owner", "Owner"
+    ADMIN = "admin", "Admin"
+    MEMBER = "member", "Member"
+
+
+class Organization(models.Model):
+    name = models.CharField(max_length=255, unique=True)
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="owned_organizations")
+    created_at = models.DateTimeField(auto_now_add=True)
+    members = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        through="OrganizationMembership",
+        related_name="organizations",
+    )
+
+    class Meta:
+        db_table = "organizations"
+        ordering = ("name",)
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class OrganizationMembership(models.Model):
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="memberships")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="organization_memberships")
+    role = models.CharField(max_length=20, choices=OrganizationRole.choices, default=OrganizationRole.MEMBER)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "organization_memberships"
+        unique_together = ("organization", "user")
+
+
+class ReportOrganizationShare(models.Model):
+    report = models.ForeignKey(Report, on_delete=models.CASCADE, related_name="organization_shares")
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="report_shares")
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "report_organization_shares"
+        unique_together = ("report", "organization")
 
 
 class KnowledgeBase(models.Model):

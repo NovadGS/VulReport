@@ -4,7 +4,15 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
         <h1 class="h3 mb-1">Rapports</h1>
-        <p class="text-muted mb-0">Tous les utilisateurs peuvent consulter tous les rapports.</p>
+        <p class="text-muted mb-0">
+            {% if request.user.role == "admin" %}
+                Tous les rapports (admin).
+            {% elif request.user.role == "pentester" %}
+                Vos rapports (pentester).
+            {% else %}
+                Rapports qui vous sont assignés (viewer).
+            {% endif %}
+        </p>
     </div>
     {% if can_create %}
         <a href="{% url 'report_create' %}" class="btn btn-primary">Nouveau rapport</a>

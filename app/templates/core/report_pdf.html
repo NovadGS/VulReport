@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="fr">
+<head>
+    <meta charset="utf-8">
+    <title>Rapport Pentest - {{ report.title }}</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 20mm 14mm 18mm 14mm;
+            @bottom-right {
+                content: "Page " counter(page) " / " counter(pages);
+                font-size: 10px;
+                color: #6b7280;
+            }
+        }
+        body { font-family: Arial, sans-serif; font-size: 11px; color: #111827; line-height: 1.4; }
+        .cover { page-break-after: always; }
+        .cover h1 { font-size: 28px; margin: 0 0 8px; color: #0f172a; }
+        .cover .subtitle { font-size: 14px; color: #475569; margin-bottom: 22px; }
+        .brand-header { border: 1px solid #d4dbe6; border-radius: 8px; padding: 10px 12px; margin-bottom: 18px; }
+        .brand-table { width: 100%; border-collapse: collapse; }
+        .brand-table td { vertical-align: middle; }
+        .vulnreport-logo { width: 210px; height: 44px; border-radius: 8px; background: linear-gradient(90deg, #0b1324 0%, #1d4ed8 100%); color: #ffffff; font-weight: 700; letter-spacing: 0.7px; padding: 8px 12px; box-sizing: border-box; }
+        .vulnreport-logo .sub { display: block; font-size: 9px; font-weight: 400; opacity: 0.92; margin-top: 1px; }
+        .company-logo-box { text-align: right; }
+        .company-logo { max-height: 44px; max-width: 210px; object-fit: contain; }
+        .company-fallback { font-size: 10px; color: #475569; }
+        .badge { display: inline-block; background: #e2e8f0; color: #1e293b; padding: 3px 8px; border-radius: 12px; font-size: 10px; }
+        h2 { font-size: 16px; margin: 0 0 10px; color: #0f172a; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; }
+        h3 { font-size: 13px; margin: 12px 0 6px; color: #0f172a; }
+        .section { margin-bottom: 16px; }
+        .box { border: 1px solid #e5e7eb; border-radius: 6px; padding: 10px; margin-bottom: 10px; }
+        .muted { color: #64748b; }
+        .kpi { display: inline-block; margin-right: 8px; margin-bottom: 8px; padding: 6px 10px; border-radius: 6px; font-weight: bold; }
+        .critical { background: #fee2e2; color: #991b1b; }
+        .high { background: #ffedd5; color: #9a3412; }
+        .medium { background: #fef3c7; color: #92400e; }
+        .low { background: #dcfce7; color: #166534; }
+        .toc li { margin-bottom: 3px; }
+        .finding { page-break-inside: avoid; margin-bottom: 12px; }
+        .label { font-weight: bold; color: #334155; }
+        .mono { font-family: "Courier New", monospace; font-size: 10px; }
+        .divider { border-top: 1px solid #e5e7eb; margin: 8px 0; }
+        .cvss-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+        .cvss-table th, .cvss-table td { border: 1px solid #dbe2ea; padding: 6px 8px; text-align: left; }
+        .cvss-table th { background: #f8fafc; color: #334155; }
+        .risk-pill { display: inline-block; border-radius: 999px; padding: 2px 8px; font-size: 10px; font-weight: 700; }
+        .matrix { width: 100%; border-collapse: collapse; margin-top: 8px; }
+        .matrix th, .matrix td { border: 1px solid #dbe2ea; padding: 7px 8px; text-align: center; }
+        .matrix th { background: #f8fafc; color: #334155; }
+        .matrix td.label-cell { text-align: left; font-weight: 700; background: #f8fafc; }
+        .density-0 { background: #f8fafc; color: #64748b; }
+        .density-1 { background: #eef2ff; color: #1e3a8a; }
+        .density-2 { background: #ffedd5; color: #9a3412; }
+        .density-3 { background: #fee2e2; color: #991b1b; }
+        .watermark {
+            position: fixed;
+            top: 45%;
+            left: 8%;
+            transform: rotate(-24deg);
+            font-size: 78px;
+            color: rgba(239, 68, 68, 0.09);
+            font-weight: 700;
+            z-index: -1;
+            letter-spacing: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="watermark">{{ watermark_text }}</div>
+    <section class="cover">
+        <div class="brand-header">
+            <table class="brand-table">
+                <tr>
+                    <td>
+                        <div class="vulnreport-logo">
+                            VULNREPORT
+                            <span class="sub">Security Assessment Reporting</span>
+                        </div>
+                    </td>
+                    <td class="company-logo-box">
+                        {% if company_logo_src %}
+                            <img src="{{ company_logo_src }}" alt="Logo entreprise" class="company-logo">
+                        {% elif report.company_name %}
+                            <span class="company-fallback">{{ report.company_name }}</span>
+                        {% else %}
+                            <span class="company-fallback">Logo entreprise non renseigne</span>
+                        {% endif %}
+                    </td>
+                </tr>
+            </table>
+        </div>
+        <span class="badge">Rapport de test d'intrusion</span>
+        <h1>{{ report.title }}</h1>
+        <div class="subtitle">
+            {% if report.custom_header %}{{ report.custom_header }}{% else %}Document d'evaluation de securite applicative{% endif %}
+        </div>
+        <div class="box">
+            <div><span class="label">Client / Projet :</span> {{ report.title }}</div>
+            <div><span class="label">Cabinet / Entreprise :</span> {{ report.company_name|default:"VulnReport Partner" }}</div>
+            <div><span class="label">Auteur :</span> {{ report.author.username }}</div>
+            <div><span class="label">Date de generation :</span> {{ generated_at|date:"d/m/Y H:i" }}</div>
+            <div><span class="label">Statut :</span> {{ report.get_status_display }}</div>
+            <div><span class="label">Visibilite :</span> {% if report.is_public %}Public{% else %}Prive{% endif %}</div>
+        </div>
+        <div class="section">
+            <h2>Resume executif</h2>
+            <div class="box">
+                {% if report.executive_summary %}
+                    {{ report.executive_summary|linebreaksbr }}
+                {% else %}
+                    Ce rapport presente les resultats du pentest, les risques prioritaires et les recommandations de remediation.
+                {% endif %}
+            </div>
+        </div>
+    </section>
+
+    <section class="section">
+        <h2>Sommaire</h2>
+        <ol class="toc">
+            <li>Contexte et perimetre</li>
+            <li>Methodologie de test</li>
+            <li>Synthese des risques</li>
+            <li>Details des vulnerabilites</li>
+            <li>Plan de remediation</li>
+        </ol>
+    </section>
+
+    <section class="section">
+        <h2>1. Contexte et perimetre</h2>
+        <div class="box">{{ report.context|linebreaksbr }}</div>
+    </section>
+
+    <section class="section">
+        <h2>2. Methodologie de test</h2>
+        <div class="box">
+            <div>Approche alignee sur les bonnes pratiques OWASP (tests manuels + outilles), incluant :</div>
+            <ul>
+                <li>Reconnaissance de surface d'attaque et validation des controles d'acces.</li>
+                <li>Tests d'injection, gestion des sessions, controle des entrees et sorties.</li>
+                <li>Analyse de configuration de securite applicative et revue des reponses HTTP.</li>
+                <li>Qualification du risque par criticite et impact metier.</li>
+            </ul>
+        </div>
+    </section>
+
+    <section class="section">
+        <h2>3. Synthese des risques</h2>
+        <div>
+            <span class="kpi critical">Critique: {{ severity_counts.critical }}</span>
+            <span class="kpi high">Elevee: {{ severity_counts.high }}</span>
+            <span class="kpi medium">Moyenne: {{ severity_counts.medium }}</span>
+            <span class="kpi low">Faible: {{ severity_counts.low }}</span>
+        </div>
+        <div class="box muted">
+            Nombre total de findings: {{ findings|length }}.
+            Prioriser le traitement des vulnerabilites critiques et elevees en premier, puis durcir les composants exposes.
+        </div>
+        <h3>Table de criticite type CVSS</h3>
+        <table class="cvss-table">
+            <thead>
+                <tr>
+                    <th>Plage de score</th>
+                    <th>Niveau</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for band in cvss_bands %}
+                <tr>
+                    <td>{{ band.range }}</td>
+                    <td><span class="risk-pill {{ band.class_name }}">{{ band.level }}</span></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <h3>Matrice Impact x Probabilite</h3>
+        <table class="matrix">
+            <thead>
+                <tr>
+                    <th>Impact \\ Probabilite</th>
+                    {% for col in matrix_cols %}
+                        <th>{{ col }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in matrix_grid %}
+                <tr>
+                    <td class="label-cell">{{ row.impact }}</td>
+                    {% for cell in row.cells %}
+                        {% with val=cell.value %}
+                            <td class="{% if val == 0 %}density-0{% elif val == 1 %}density-1{% elif val <= 3 %}density-2{% else %}density-3{% endif %}">{{ val }}</td>
+                        {% endwith %}
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+
+    <section class="section">
+        <h2>4. Details des vulnerabilites</h2>
+        {% for f in findings %}
+            <div class="box finding">
+                <h3>{{ forloop.counter }}. {{ f.title }}</h3>
+                <div class="muted">
+                    {% if f.cve_id %}CVE: {{ f.cve_id }} · {% endif %}
+                    Severite: {{ f.get_severity_level_display }} · CVSS: {{ f.cvss_score }}
+                </div>
+                <div class="divider"></div>
+                <div><span class="label">Description:</span> {{ f.description|default:"N/A"|linebreaksbr }}</div>
+                {% if f.impact %}<div><span class="label">Impact:</span> {{ f.impact|linebreaksbr }}</div>{% endif %}
+                {% if f.proof_poc %}<div><span class="label">Preuve / PoC:</span> <span class="mono">{{ f.proof_poc|linebreaksbr }}</span></div>{% endif %}
+                {% if f.recommendation %}<div><span class="label">Recommandation:</span> {{ f.recommendation|linebreaksbr }}</div>{% endif %}
+                {% if f.references %}<div><span class="label">References:</span> <span class="mono">{{ f.references|linebreaksbr }}</span></div>{% endif %}
+            </div>
+        {% empty %}
+            <div class="box">Aucune vulnerabilite detaillee disponible.</div>
+        {% endfor %}
+    </section>
+
+    <section class="section">
+        <h2>5. Plan de remediation (recommande)</h2>
+        <div class="box">
+            <ol>
+                <li><strong>Priorite immediate (J+0 a J+7):</strong> corriger les risques critiques/eleves exposes.</li>
+                <li><strong>Priorite court terme (J+7 a J+30):</strong> renforcer l'authentification, la journalisation et les controles d'acces.</li>
+                <li><strong>Priorite continue:</strong> rejouer les tests apres correction et industrialiser les controles (SAST/DAST, revues regulieres).</li>
+            </ol>
+        </div>
+    </section>
+    <section class="section">
+        <h2>6. Integrite & signature</h2>
+        <div class="box">
+            <div><span class="label">Hash SHA-256:</span> <span class="mono">{{ integrity_hash }}</span></div>
+            <div><span class="label">Signature HMAC:</span> <span class="mono">{{ pdf_signature }}</span></div>
+            <div class="muted">Ce bloc permet de verifier l'integrite du contenu exporte.</div>
+        </div>
+    </section>
+</body>
+</html>

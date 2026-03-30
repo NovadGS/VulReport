@@ -6,8 +6,24 @@
         <div class="card shadow-sm border-0">
             <div class="card-body p-4">
                 <h1 class="h4 mb-3">{% if is_edit %}Modifier le rapport{% else %}Creer un rapport{% endif %}</h1>
-                <form method="post">
+                <form method="post" enctype="multipart/form-data">
                     {% csrf_token %}
+                    {% if not is_edit %}
+                    <h2 class="h5 mb-3">Ajouts automatiques (optionnel)</h2>
+                    <div class="mb-3">
+                        <label class="form-label" for="cve_id">CVE (auto-remplissage d'un finding)</label>
+                        <input id="cve_id" name="cve_id" class="form-control" placeholder="CVE-2024-3094">
+                        <div id="cveHint" class="form-text"></div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="file">Importer un rapport (ZAP/Bandit JSON)</label>
+                        <input id="file" name="file" type="file" class="form-control" accept=".json,.html,.htm,.txt,application/json,text/html,text/plain">
+                        <div class="form-text">
+                            Formats supportes: JSON, HTML/HTM, TXT. L'upload lance aussi une auto-completion des champs.
+                        </div>
+                    </div>
+                    <hr>
+                    {% endif %}
                     {{ form.as_p }}
                     <div class="d-flex gap-2">
                         <button type="submit" class="btn btn-primary">Enregistrer</button>
@@ -18,4 +34,71 @@
         </div>
     </div>
 </div>
+{% if not is_edit %}
+<script>
+(() => {
+    const cveInput = document.getElementById("cve_id");
+    const fileInput = document.getElementById("file");
+    const cveHint = document.getElementById("cveHint");
+    const titleInput = document.getElementById("id_title");
+    const contextInput = document.getElementById("id_context");
+    const summaryInput = document.getElementById("id_executive_summary");
+    const csrfToken = document.querySelector("input[name='csrfmiddlewaretoken']")?.value || "";
+
+    const applyIfEmpty = (el, value) => {
+        if (!el || !value) return;
+        if (!el.value || !el.value.trim()) el.value = value;
+    };
+
+    const applyWithMerge = (el, value) => {
+        if (!el || !value) return;
+        if (!el.value || !el.value.trim()) {
+            el.value = value;
+            return;
+        }
+        if (!el.value.includes(value.slice(0, 80))) {
+            el.value = (el.value + "\n\n" + value).trim();
+        }
+    };
+
+    const fetchAutofill = async ({ withFile, withCve }) => {
+        const form = new FormData();
+        if (withFile && fileInput?.files?.length) form.append("file", fileInput.files[0]);
+        if (withCve && cveInput?.value?.trim()) form.append("cve_id", cveInput.value.trim());
+        if (![...form.keys()].length) return;
+
+        const res = await fetch("{% url 'report_autofill' %}", {
+            method: "POST",
+            headers: { "X-CSRFToken": csrfToken },
+            body: form
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+
+        applyIfEmpty(titleInput, data.title);
+        applyIfEmpty(contextInput, data.context);
+        applyIfEmpty(summaryInput, data.executive_summary);
+
+        if (data.cve && data.cve.cve_id) {
+            const cveLine = `CVE ${data.cve.cve_id}${data.cve.severity ? " - " + data.cve.severity : ""}`;
+            cveHint.textContent = cveLine;
+            applyWithMerge(summaryInput, data.cve.description || "");
+            applyWithMerge(contextInput, `Contexte CVE: ${data.cve.cve_id}`);
+        } else {
+            cveHint.textContent = "";
+        }
+    };
+
+    let cveTimer;
+    cveInput?.addEventListener("input", () => {
+        clearTimeout(cveTimer);
+        cveTimer = setTimeout(() => fetchAutofill({ withFile: false, withCve: true }), 450);
+    });
+
+    fileInput?.addEventListener("change", () => {
+        fetchAutofill({ withFile: true, withCve: !!cveInput?.value?.trim() });
+    });
+})();
+</script>
+{% endif %}
 {% endblock %}

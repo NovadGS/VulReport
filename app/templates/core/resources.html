@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Ressources{% endblock %}
+{% block content %}
+<div class="mb-4">
+    <h1 class="h3 mb-1">Ressources</h1>
+    <p class="text-muted mb-0">Liens utiles (labs, cheat sheets, guides).</p>
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-6">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-body">
+                <h2 class="h5">Labs</h2>
+                <ul class="mb-0">
+                    <li><a href="https://portswigger.net/web-security" target="_blank" rel="noreferrer">PortSwigger Web Security Academy</a></li>
+                    <li><a href="https://tryhackme.com/" target="_blank" rel="noreferrer">TryHackMe</a></li>
+                    <li><a href="https://owasp.org/www-project-juice-shop/" target="_blank" rel="noreferrer">OWASP Juice Shop</a></li>
+                    <li><a href="https://owasp.org/www-project-webgoat/" target="_blank" rel="noreferrer">OWASP WebGoat</a></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-body">
+                <h2 class="h5">Cheat Sheets</h2>
+                <ul class="mb-0">
+                    <li><a href="https://cheatsheetseries.owasp.org/" target="_blank" rel="noreferrer">OWASP Cheat Sheet Series</a></li>
+                    <li><a href="https://owasp.org/www-project-top-ten/" target="_blank" rel="noreferrer">OWASP Top 10</a></li>
+                    <li><a href="https://cwe.mitre.org/" target="_blank" rel="noreferrer">MITRE CWE</a></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

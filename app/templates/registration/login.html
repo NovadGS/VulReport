@@ -18,6 +18,9 @@
                     </div>
                     <button type="submit" class="btn btn-primary w-100">Se connecter</button>
                 </form>
+                <div class="mt-3 text-center">
+                    <a href="{% url 'password_reset' %}">Mot de passe oublie ?</a>
+                </div>
                 <hr>
                 <p class="mb-2 text-muted">Pas de compte ?</p>
                 <a href="{% url 'register' %}" class="btn btn-outline-secondary w-100">Creer un compte Viewer</a>
