@@ -18,6 +18,7 @@ from .forms import (
     AccountSettingsForm,
     CurrentUserPasswordResetForm,
     FindingCommentForm,
+    FriendSearchForm,
     KnowledgeBaseForm,
     OrganizationAddMemberForm,
     OrganizationCreateForm,
@@ -29,6 +30,8 @@ from .mfa import build_totp_enrollment, get_or_create_totp_device, verify_totp_c
 from .models import (
     Finding,
     FindingComment,
+    FriendRequest,
+    FriendRequestStatus,
     KnowledgeBase,
     Organization,
     OrganizationMembership,
@@ -42,8 +45,6 @@ from .models import (
 import hashlib
 import hmac
 import secrets
-
-from weasyprint import HTML
 
 
 def _ensure_can_edit_report(user, report: Report) -> None:
@@ -76,6 +77,30 @@ def _is_org_admin_or_owner(org: Organization, user: User) -> bool:
 
 def _clean_text(value: str, limit: int = 2000) -> str:
     return " ".join((value or "").replace("\r", " ").replace("\n", " ").split())[:limit].strip()
+
+
+def _friends_for_user(user: User) -> list[User]:
+    relations = FriendRequest.objects.filter(status=FriendRequestStatus.ACCEPTED).filter(
+        Q(from_user=user) | Q(to_user=user)
+    ).select_related("from_user", "to_user")
+    friends = []
+    for relation in relations:
+        friends.append(relation.to_user if relation.from_user_id == user.id else relation.from_user)
+    return sorted(friends, key=lambda item: item.username.lower())
+
+
+def _friend_context(user: User) -> dict:
+    return {
+        "friends": _friends_for_user(user),
+        "incoming_requests": FriendRequest.objects.filter(
+            to_user=user,
+            status=FriendRequestStatus.PENDING,
+        ).select_related("from_user"),
+        "outgoing_requests": FriendRequest.objects.filter(
+            from_user=user,
+            status=FriendRequestStatus.PENDING,
+        ).select_related("to_user"),
+    }
 
 
 def _extract_report_suggestions_from_text(raw_text: str, source_name: str = "") -> dict[str, str]:
@@ -377,7 +402,7 @@ def register_viewer(request):
                 user.delete()
                 messages.error(
                     request,
-                    "Impossible d'envoyer l'email de confirmation. Verifiez la configuration SMTP.",
+                    "Impossible d'envoyer l'email de confirmation. Verifiez EMAIL_HOST_USER, EMAIL_HOST_PASSWORD, EMAIL_PORT et EMAIL_USE_TLS/SSL dans le .env puis redemarrez le service.",
                 )
                 return render(request, "registration/register.html", {"form": form})
             messages.success(
@@ -628,6 +653,12 @@ def report_pdf(request, report_id: int):
         "watermark_text": watermark_text,
         "generated_at": timezone.now(),
     }
+    try:
+        from weasyprint import HTML
+    except OSError:
+        messages.error(request, "Generation PDF indisponible sur ce systeme (dependances WeasyPrint manquantes).")
+        return redirect("report_detail", report_id=report.id)
+
     html = render(request, "core/report_pdf.html", context).content.decode("utf-8")
     pdf_bytes = HTML(string=html, base_url=request.build_absolute_uri("/")).write_pdf()
     response = HttpResponse(pdf_bytes, content_type="application/pdf")
@@ -1054,19 +1085,156 @@ def resources(request):
 
 
 @login_required
+def friends(request):
+    if request.method == "POST":
+        form = FriendSearchForm(request.POST)
+        if not form.is_valid():
+            messages.error(request, "Veuillez saisir un ID ami valide.")
+            return redirect("friends")
+
+        profile_id = form.cleaned_data["profile_id"]
+        target = User.objects.filter(profile_id__iexact=profile_id).exclude(pk=request.user.pk).first()
+        if not target:
+            messages.error(request, "Aucun utilisateur ne correspond a cet ID.")
+            return redirect("friends")
+
+        existing = FriendRequest.objects.filter(
+            Q(from_user=request.user, to_user=target) | Q(from_user=target, to_user=request.user)
+        ).order_by("-created_at").first()
+
+        if existing and existing.status == FriendRequestStatus.ACCEPTED:
+            messages.info(request, f"Vous etes deja ami avec {target.username}.")
+            return redirect("friends")
+
+        if existing and existing.status == FriendRequestStatus.PENDING:
+            if existing.to_user_id == request.user.id:
+                existing.status = FriendRequestStatus.ACCEPTED
+                existing.responded_at = timezone.now()
+                existing.save(update_fields=["status", "responded_at"])
+                _audit(
+                    request,
+                    action="update",
+                    object_type="friend_request",
+                    object_id=existing.id,
+                    metadata={"status": FriendRequestStatus.ACCEPTED, "friend_user_id": target.id},
+                )
+                messages.success(request, f"Vous etes maintenant ami avec {target.username}.")
+            else:
+                messages.info(request, "Une demande d'ami est deja en attente.")
+            return redirect("friends")
+
+        if existing and existing.status == FriendRequestStatus.DECLINED:
+            existing.from_user = request.user
+            existing.to_user = target
+            existing.status = FriendRequestStatus.PENDING
+            existing.responded_at = None
+            existing.save(update_fields=["from_user", "to_user", "status", "responded_at"])
+            request_obj = existing
+        else:
+            request_obj = FriendRequest.objects.create(from_user=request.user, to_user=target)
+
+        _audit(
+            request,
+            action="create",
+            object_type="friend_request",
+            object_id=request_obj.id,
+            metadata={"to_user_id": target.id, "profile_id": target.profile_id},
+        )
+        messages.success(request, f"Demande d'ami envoyee a {target.username}.")
+        return redirect("friends")
+
+    context = {"search_form": FriendSearchForm(), **_friend_context(request.user)}
+    return render(request, "core/friends.html", context)
+
+
+@login_required
+@require_POST
+def friend_request_accept(request, request_id: int):
+    friend_request = get_object_or_404(
+        FriendRequest.objects.select_related("from_user"),
+        pk=request_id,
+        to_user=request.user,
+        status=FriendRequestStatus.PENDING,
+    )
+    friend_request.status = FriendRequestStatus.ACCEPTED
+    friend_request.responded_at = timezone.now()
+    friend_request.save(update_fields=["status", "responded_at"])
+    _audit(
+        request,
+        action="update",
+        object_type="friend_request",
+        object_id=friend_request.id,
+        metadata={"status": FriendRequestStatus.ACCEPTED, "from_user_id": friend_request.from_user_id},
+    )
+    messages.success(request, f"{friend_request.from_user.username} a ete ajoute a vos amis.")
+    return redirect("friends")
+
+
+@login_required
+@require_POST
+def friend_request_decline(request, request_id: int):
+    friend_request = get_object_or_404(
+        FriendRequest.objects.select_related("from_user"),
+        pk=request_id,
+        to_user=request.user,
+        status=FriendRequestStatus.PENDING,
+    )
+    friend_request.status = FriendRequestStatus.DECLINED
+    friend_request.responded_at = timezone.now()
+    friend_request.save(update_fields=["status", "responded_at"])
+    _audit(
+        request,
+        action="update",
+        object_type="friend_request",
+        object_id=friend_request.id,
+        metadata={"status": FriendRequestStatus.DECLINED, "from_user_id": friend_request.from_user_id},
+    )
+    messages.info(request, "Demande d'ami refusee.")
+    return redirect("friends")
+
+
+@login_required
+@require_POST
+def friend_request_cancel(request, request_id: int):
+    friend_request = get_object_or_404(
+        FriendRequest,
+        pk=request_id,
+        from_user=request.user,
+        status=FriendRequestStatus.PENDING,
+    )
+    _audit(
+        request,
+        action="delete",
+        object_type="friend_request",
+        object_id=friend_request.id,
+        metadata={"to_user_id": friend_request.to_user_id},
+    )
+    friend_request.delete()
+    messages.info(request, "Demande d'ami annulee.")
+    return redirect("friends")
+
+
+@login_required
 def account_settings(request):
     if request.method == "POST":
         if request.POST.get("action") == "send_reset_link":
             reset_form = CurrentUserPasswordResetForm({"email": request.user.email})
             if reset_form.is_valid():
-                reset_form.save(
-                    request=request,
-                    use_https=request.is_secure(),
-                    from_email=settings.DEFAULT_FROM_EMAIL,
-                    email_template_name="registration/password_reset_email.html",
-                    subject_template_name="registration/password_reset_subject.txt",
-                )
-                messages.success(request, "Email de reinitialisation envoye.")
+                try:
+                    reset_form.save(
+                        request=request,
+                        use_https=request.is_secure(),
+                        from_email=settings.DEFAULT_FROM_EMAIL,
+                        email_template_name="registration/password_reset_email.html",
+                        subject_template_name="registration/password_reset_subject.txt",
+                    )
+                except Exception:
+                    messages.error(
+                        request,
+                        "Impossible d'envoyer l'email de reinitialisation. Verifiez EMAIL_HOST_USER, EMAIL_HOST_PASSWORD, EMAIL_PORT et EMAIL_USE_TLS/SSL dans le .env puis redemarrez le service.",
+                    )
+                else:
+                    messages.success(request, "Email de reinitialisation envoye.")
             else:
                 messages.error(request, "Impossible d'envoyer l'email de reinitialisation.")
             return redirect("account_settings")

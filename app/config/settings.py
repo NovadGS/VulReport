@@ -8,6 +8,23 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 load_dotenv(BASE_DIR.parent / ".env")
 
+
+def _env_str(*names: str, default: str = "") -> str:
+    for name in names:
+        value = os.getenv(name)
+        if value is not None and value.strip() != "":
+            return value.strip()
+    return default
+
+
+def _env_bool(*names: str, default: bool = False) -> bool:
+    for name in names:
+        value = os.getenv(name)
+        if value is not None and value.strip() != "":
+            return value.strip().lower() in {"1", "true", "yes", "on"}
+    return default
+
+
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "").strip() or os.getenv("SECRET_KEY", "").strip()
 if not SECRET_KEY:
     raise ImproperlyConfigured("DJANGO_SECRET_KEY must be set.")
@@ -116,19 +133,33 @@ LOGIN_REDIRECT_URL = "home"
 LOGOUT_REDIRECT_URL = "login"
 
 # Email configuration for account activation
-# En dev local, si aucune credential SMTP n'est fournie, on bascule automatiquement en console.
-EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")
-EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
-EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "").strip()
-EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "").strip()
-EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True").lower() == "true"
-DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "noreply@vulnreport.local")
+# Alias supportés: EMAIL_*, SMTP_* et MAIL_* pour simplifier le .env.
+EMAIL_HOST = _env_str("EMAIL_HOST", "SMTP_HOST", "MAIL_HOST", default="smtp.gmail.com")
+EMAIL_PORT = int(_env_str("EMAIL_PORT", "SMTP_PORT", "MAIL_PORT", default="587"))
+EMAIL_HOST_USER = _env_str("EMAIL_HOST_USER", "SMTP_USER", "SMTP_USERNAME", "MAIL_USERNAME")
+EMAIL_HOST_PASSWORD = _env_str("EMAIL_HOST_PASSWORD", "SMTP_PASSWORD", "SMTP_PASS", "MAIL_PASSWORD")
+EMAIL_USE_SSL = _env_bool("EMAIL_USE_SSL", "SMTP_USE_SSL", "MAIL_USE_SSL", default=EMAIL_PORT == 465)
+EMAIL_USE_TLS = _env_bool("EMAIL_USE_TLS", "SMTP_USE_TLS", "MAIL_USE_TLS", default=not EMAIL_USE_SSL)
+if EMAIL_USE_SSL:
+    EMAIL_USE_TLS = False
+DEFAULT_FROM_EMAIL = _env_str(
+    "DEFAULT_FROM_EMAIL",
+    "EMAIL_FROM",
+    "SMTP_FROM_EMAIL",
+    default=EMAIL_HOST_USER or "noreply@vulnreport.local",
+)
+SERVER_EMAIL = DEFAULT_FROM_EMAIL
+EMAIL_TIMEOUT = int(_env_str("EMAIL_TIMEOUT", "SMTP_TIMEOUT", default="20"))
 
-_email_backend = os.getenv("EMAIL_BACKEND", "").strip()
+_email_backend = _env_str("EMAIL_BACKEND", default="")
 if _email_backend:
     EMAIL_BACKEND = _email_backend
 else:
-    EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend" if (EMAIL_HOST_USER and EMAIL_HOST_PASSWORD) else "django.core.mail.backends.console.EmailBackend"
+    EMAIL_BACKEND = (
+        "django.core.mail.backends.smtp.EmailBackend"
+        if (EMAIL_HOST_USER and EMAIL_HOST_PASSWORD)
+        else "django.core.mail.backends.console.EmailBackend"
+    )
 
 # Security headers and cookie hardening
 SECURE_BROWSER_XSS_FILTER = True

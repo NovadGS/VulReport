@@ -1,3 +1,5 @@
+import uuid
+
 from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 from django.core.validators import MaxValueValidator, MinValueValidator
@@ -21,6 +23,7 @@ class User(AbstractUser):
     )
     updated_at = models.DateTimeField(auto_now=True, db_column="updated_at")
 
+    profile_id = models.CharField(max_length=16, unique=True, blank=True, editable=False)
     role = models.CharField(max_length=20, choices=UserRole.choices, default=UserRole.VIEWER, db_index=True)
     company_name = models.CharField(max_length=255, blank=True, default="")
     profile_photo = models.ImageField(upload_to="profiles/", blank=True, null=True)
@@ -33,6 +36,20 @@ class User(AbstractUser):
         db_table = "users"
         verbose_name = "user"
         verbose_name_plural = "users"
+
+    @staticmethod
+    def generate_profile_id() -> str:
+        return f"VR-{uuid.uuid4().hex[:8].upper()}"
+
+    def save(self, *args, **kwargs):
+        if not self.profile_id:
+            manager = type(self).objects
+            while True:
+                candidate = self.generate_profile_id()
+                if not manager.filter(profile_id=candidate).exclude(pk=self.pk).exists():
+                    self.profile_id = candidate
+                    break
+        super().save(*args, **kwargs)
 
     def __str__(self) -> str:
         return f"{self.username} ({self.role})"
@@ -244,6 +261,31 @@ class OrganizationMembership(models.Model):
     class Meta:
         db_table = "organization_memberships"
         unique_together = ("organization", "user")
+
+
+class FriendRequestStatus(models.TextChoices):
+    PENDING = "pending", "En attente"
+    ACCEPTED = "accepted", "Acceptee"
+    DECLINED = "declined", "Refusee"
+
+
+class FriendRequest(models.Model):
+    from_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="sent_friend_requests")
+    to_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="received_friend_requests")
+    status = models.CharField(max_length=20, choices=FriendRequestStatus.choices, default=FriendRequestStatus.PENDING, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    responded_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "friend_requests"
+        ordering = ("-created_at",)
+        constraints = [
+            models.UniqueConstraint(fields=("from_user", "to_user"), name="unique_friend_request_direction"),
+            models.CheckConstraint(check=~models.Q(from_user=models.F("to_user")), name="prevent_self_friend_request"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.from_user.username} -> {self.to_user.username} ({self.status})"
 
 
 class ReportOrganizationShare(models.Model):

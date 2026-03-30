@@ -146,6 +146,19 @@ class CurrentUserPasswordResetForm(PasswordResetForm):
         self.fields["email"].widget.attrs["class"] = "form-control"
 
 
+class FriendSearchForm(forms.Form):
+    profile_id = forms.CharField(
+        max_length=16,
+        widget=forms.TextInput(
+            attrs={"class": "form-control", "placeholder": "Ex: VR-1A2B3C4D"}
+        ),
+        label="ID ami",
+    )
+
+    def clean_profile_id(self):
+        return (self.cleaned_data.get("profile_id") or "").strip().upper()
+
+
 class FindingCommentForm(forms.ModelForm):
     class Meta:
         model = FindingComment

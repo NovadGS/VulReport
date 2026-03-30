@@ -5,6 +5,7 @@ from .models import (
     AuditLog,
     Finding,
     FindingComment,
+    FriendRequest,
     KnowledgeBase,
     Organization,
     OrganizationMembership,
@@ -19,9 +20,10 @@ from .models import (
 @admin.register(User)
 class UserAdmin(DjangoUserAdmin):
     fieldsets = DjangoUserAdmin.fieldsets + (
-        ("Security", {"fields": ("role", "mfa_required", "mfa_enrolled", "top_enabled")}),
+        ("Security", {"fields": ("profile_id", "role", "mfa_required", "mfa_enrolled", "top_enabled")}),
     )
-    list_display = ("username", "email", "role", "is_staff", "is_active", "mfa_enrolled", "top_enabled", "updated_at")
+    readonly_fields = ("profile_id",)
+    list_display = ("username", "profile_id", "email", "role", "is_staff", "is_active", "mfa_enrolled", "top_enabled", "updated_at")
     list_filter = ("role", "is_staff", "is_active", "mfa_enrolled", "top_enabled")
 
 
@@ -78,6 +80,14 @@ class AuditLogAdmin(admin.ModelAdmin):
     list_filter = ("action", "created_at")
     search_fields = ("actor__username", "object_type", "object_id", "ip_address")
     readonly_fields = ("created_at",)
+
+
+@admin.register(FriendRequest)
+class FriendRequestAdmin(admin.ModelAdmin):
+    list_display = ("id", "from_user", "to_user", "status", "created_at", "responded_at")
+    list_filter = ("status", "created_at")
+    search_fields = ("from_user__username", "to_user__username", "from_user__profile_id", "to_user__profile_id")
+    readonly_fields = ("created_at", "responded_at")
 
 
 @admin.register(TopDevice)
