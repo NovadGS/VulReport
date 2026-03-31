@@ -16,6 +16,7 @@ from datetime import timedelta
 
 from .forms import (
     AccountSettingsForm,
+    FindingForm,
     CurrentUserPasswordResetForm,
     FindingCommentForm,
     FriendSearchForm,
@@ -33,6 +34,7 @@ from .models import (
     FriendRequest,
     FriendRequestStatus,
     KnowledgeBase,
+    KBCategory,
     Organization,
     OrganizationMembership,
     OrganizationRole,
@@ -45,6 +47,9 @@ from .models import (
 import hashlib
 import hmac
 import secrets
+import json
+from urllib import request as _urlrequest, error as _urlerror
+import yaml
 
 
 def _ensure_can_edit_report(user, report: Report) -> None:
@@ -77,6 +82,74 @@ def _is_org_admin_or_owner(org: Organization, user: User) -> bool:
 
 def _clean_text(value: str, limit: int = 2000) -> str:
     return " ".join((value or "").replace("\r", " ").replace("\n", " ").split())[:limit].strip()
+
+
+def _virustotal_lookup_sha256(file_bytes: bytes, filename: str = "") -> dict | None:
+    """
+    Vérifie un fichier sur VirusTotal via son hash SHA-256.
+    Ne bloque pas l'action en cas d'erreur réseau ou d'API manquante.
+    """
+    api_key = getattr(settings, "VIRUSTOTAL_API_KEY", "") or ""
+    if not api_key:
+        return None
+
+    sha256 = hashlib.sha256(file_bytes).hexdigest()
+    url = f"https://www.virustotal.com/api/v3/files/{sha256}"
+    req = _urlrequest.Request(url)
+    req.add_header("x-apikey", api_key)
+    try:
+        with _urlrequest.urlopen(req, timeout=8) as resp:
+            body = resp.read().decode("utf-8", errors="ignore")
+    except _urlerror.URLError:
+        return None
+    try:
+        data = json.loads(body)
+    except Exception:
+        return None
+
+    attributes = (data.get("data") or {}).get("attributes") or {}
+    stats = attributes.get("last_analysis_stats") or {}
+    malicious = int(stats.get("malicious") or 0)
+    suspicious = int(stats.get("suspicious") or 0)
+    harmless = int(stats.get("harmless") or 0)
+    undetected = int(stats.get("undetected") or 0)
+    return {
+        "sha256": sha256,
+        "filename": filename,
+        "malicious": malicious,
+        "suspicious": suspicious,
+        "harmless": harmless,
+        "undetected": undetected,
+    }
+
+
+def _virustotal_assert_clean(upload) -> None:
+    """
+    Bloque le fichier si VirusTotal le signale (>=1 détection malicieuse/suspecte).
+    """
+    try:
+        position = upload.tell()
+    except Exception:
+        position = None
+    try:
+        file_bytes = upload.read()
+    except Exception:
+        return
+    result = _virustotal_lookup_sha256(file_bytes, getattr(upload, "name", ""))
+    # Remet le pointeur en place pour les autres traitements
+    try:
+        if position is not None:
+            upload.seek(position)
+    except Exception:
+        pass
+    if not result:
+        return
+    positives = int(result["malicious"]) + int(result["suspicious"])
+    if positives >= 1:
+        raise ValueError(
+            f"Upload bloque: VirusTotal a detecte ce fichier comme suspect "
+            f"(malicious={result['malicious']}, suspicious={result['suspicious']})."
+        )
 
 
 def _friends_for_user(user: User) -> list[User]:
@@ -236,23 +309,33 @@ def _import_findings_from_upload(report: Report, upload) -> int:
         "text/plain",
         "text/html",
         "application/xhtml+xml",
+        "text/yaml",
+        "application/yaml",
+        "application/x-yaml",
     }
     filename = (getattr(upload, "name", "") or "").lower()
-    allowed_ext = (".json", ".html", ".htm", ".txt")
+    allowed_ext = (".json", ".html", ".htm", ".txt", ".yml", ".yaml")
     if upload.content_type not in allowed_types and not filename.endswith(allowed_ext):
-        raise ValueError("Type de fichier non autorise (JSON/HTML/TXT attendus).")
-
-    import json
+        raise ValueError("Type de fichier non autorise (JSON/HTML/YML/TXT attendus).")
 
     raw = upload.read().decode("utf-8", errors="replace")
     data = None
+    filename = (getattr(upload, "name", "") or "").lower()
     try:
         data = json.loads(raw)
     except Exception:
         data = None
 
+    # Tentative de parsing YAML structuré si JSON non valide
+    if data is None and filename.endswith((".yml", ".yaml")):
+        try:
+            data = yaml.safe_load(raw)
+        except Exception:
+            data = None
+
     created = 0
 
+    # Bandit JSON
     if isinstance(data, dict) and isinstance(data.get("results"), list):
         for item in data["results"]:
             if created >= settings.MAX_IMPORT_FINDINGS:
@@ -277,6 +360,7 @@ def _import_findings_from_upload(report: Report, upload) -> int:
             )
             created += 1
 
+    # ZAP JSON
     if isinstance(data, dict) and isinstance(data.get("site"), list):
         for site in data["site"]:
             if created >= settings.MAX_IMPORT_FINDINGS:
@@ -306,8 +390,50 @@ def _import_findings_from_upload(report: Report, upload) -> int:
                 )
                 created += 1
 
+    # YAML structuré maison : liste de findings ou dict["findings"]
+    if created == 0 and isinstance(data, dict) and isinstance(data.get("findings"), list):
+        items = data.get("findings") or []
+        for item in items:
+            if created >= settings.MAX_IMPORT_FINDINGS:
+                break
+            if not isinstance(item, dict):
+                continue
+            title = (item.get("title") or "Finding importé").strip()
+            cve_id = (item.get("cve_id") or "").strip().upper()
+            description = (item.get("description") or "").strip()
+            impact = (item.get("impact") or "").strip()
+            poc = (item.get("proof_poc") or item.get("poc") or "").strip()
+            recommendation = (item.get("recommendation") or item.get("remediation") or "").strip()
+            references = item.get("references") or []
+            if isinstance(references, list):
+                references_text = "\n".join(str(r) for r in references)
+            else:
+                references_text = str(references)
+            sev_label = (item.get("severity") or "").strip().upper()
+            sev_map = {"LOW": 1, "MEDIUM": 2, "HIGH": 3, "CRITICAL": 3}
+            severity_level = sev_map.get(sev_label, 1)
+            cvss_score = item.get("cvss") or item.get("cvss_score") or 0.0
+            try:
+                cvss_score = float(cvss_score)
+            except (TypeError, ValueError):
+                cvss_score = 0.0
+            Finding.objects.create(
+                report=report,
+                cve_id=cve_id,
+                title=title[:255],
+                description=description,
+                impact=impact,
+                proof_poc=poc,
+                recommendation=recommendation,
+                references=references_text,
+                severity_level=severity_level,
+                cvss_score=cvss_score,
+                display_order=report.findings.count() + created,
+            )
+            created += 1
+
+    # Fallback texte brut
     if created == 0:
-        # Fallback for HTML/TXT or unknown JSON schema.
         content_preview = raw[:20000].strip()
         if not content_preview:
             raise ValueError("Fichier vide ou non exploitable.")
@@ -343,6 +469,10 @@ def report_autofill(request):
     if upload:
         if upload.size > settings.MAX_IMPORT_FILE_SIZE:
             return HttpResponse('{"error":"file_too_large"}', content_type="application/json", status=400)
+        try:
+            _virustotal_assert_clean(upload)
+        except ValueError:
+            return HttpResponse('{"error":"malicious_file_detected"}', content_type="application/json", status=400)
         text = _read_upload_as_text(upload)
         payload.update(_extract_report_suggestions_from_text(text, getattr(upload, "name", "")))
 
@@ -366,7 +496,6 @@ def report_autofill(request):
                     1200,
                 )
 
-    import json
     return HttpResponse(json.dumps(payload), content_type="application/json")
 
 
@@ -514,6 +643,7 @@ def report_create(request):
 
             if upload:
                 try:
+                    _virustotal_assert_clean(upload)
                     imported_count = _import_findings_from_upload(report, upload)
                 except ValueError as exc:
                     messages.error(request, str(exc))
@@ -699,6 +829,7 @@ def report_import_tool_report(request, report_id: int):
         return redirect("report_detail", report_id=report.id)
 
     try:
+        _virustotal_assert_clean(upload)
         created = _import_findings_from_upload(report, upload)
     except ValueError as exc:
         messages.error(request, str(exc))
@@ -710,6 +841,40 @@ def report_import_tool_report(request, report_id: int):
         messages.warning(request, "Aucun finding reconnu dans ce JSON (formats supportés: Bandit JSON, ZAP JSON).")
 
     return redirect("report_detail", report_id=report.id)
+
+
+@login_required
+def finding_edit(request, report_id: int, finding_id: int):
+    report = get_object_or_404(Report, pk=report_id)
+    _ensure_can_view_report(request.user, report)
+    _ensure_can_edit_report(request.user, report)
+    finding = get_object_or_404(Finding, pk=finding_id, report=report)
+
+    if request.method == "POST":
+        form = FindingForm(request.POST, instance=finding)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Finding mis a jour.")
+            return redirect("report_detail", report_id=report.id)
+    else:
+        form = FindingForm(instance=finding)
+
+    return render(request, "core/finding_form.html", {"form": form, "report": report, "finding": finding})
+
+
+@login_required
+def finding_delete(request, report_id: int, finding_id: int):
+    report = get_object_or_404(Report, pk=report_id)
+    _ensure_can_view_report(request.user, report)
+    _ensure_can_edit_report(request.user, report)
+    finding = get_object_or_404(Finding, pk=finding_id, report=report)
+
+    if request.method == "POST":
+        finding.delete()
+        messages.success(request, "Finding supprime.")
+        return redirect("report_detail", report_id=report.id)
+
+    return render(request, "core/finding_delete.html", {"report": report, "finding": finding})
 
 
 @login_required
@@ -875,13 +1040,13 @@ def organization_add_member(request, org_id: int):
         raise PermissionDenied("Seul un owner/admin peut ajouter des membres.")
     form = OrganizationAddMemberForm(request.POST)
     if not form.is_valid():
-        messages.error(request, "Username invalide.")
+        messages.error(request, "Identifiant membre invalide.")
         return redirect("organization_detail", org_id=org.id)
-    username = form.cleaned_data["username"]
+    identifier = form.cleaned_data["identifier"]
     role = form.cleaned_data["role"]
-    user = User.objects.filter(username=username).first()
+    user = User.objects.filter(Q(username__iexact=identifier) | Q(profile_id__iexact=identifier)).first()
     if not user:
-        messages.error(request, "Utilisateur introuvable.")
+        messages.error(request, "Utilisateur introuvable (username ou ID inconnu).")
         return redirect("organization_detail", org_id=org.id)
     created = False
     membership, created = OrganizationMembership.objects.get_or_create(
@@ -897,9 +1062,9 @@ def organization_add_member(request, org_id: int):
         action="update" if not created else "create",
         object_type="organization_membership",
         object_id=membership.id,
-        metadata={"organization_id": org.id, "username": username, "role": role},
+        metadata={"organization_id": org.id, "username": user.username, "profile_id": user.profile_id, "role": role},
     )
-    messages.success(request, f"{username} ajoute a l'organisation.")
+    messages.success(request, f"{user.username} ajoute a l'organisation.")
     return redirect("organization_detail", org_id=org.id)
 
 
@@ -1021,7 +1186,25 @@ def cve_lookup(request):
 @login_required
 def kb_list(request):
     entries = KnowledgeBase.objects.all()
-    return render(request, "core/kb_list.html", {"entries": entries})
+    cve_query = (request.GET.get("cve") or "").strip().upper()
+    cve_result = None
+    cve_error = ""
+    if cve_query:
+        cve_data = fetch_cve_data(cve_query)
+        if cve_data:
+            cve_result = cve_data
+        else:
+            cve_error = "CVE introuvable ou format invalide."
+    return render(
+        request,
+        "core/kb_list.html",
+        {
+            "entries": entries,
+            "cve_query": cve_query,
+            "cve_result": cve_result,
+            "cve_error": cve_error,
+        },
+    )
 
 
 @login_required
@@ -1077,6 +1260,52 @@ def kb_delete(request, entry_id: int):
         return redirect("kb_list")
 
     return render(request, "core/kb_delete.html", {"entry": entry})
+
+
+@login_required
+@require_POST
+def kb_import_from_cve(request):
+    if request.user.role != UserRole.ADMIN:
+        raise PermissionDenied("Seuls les admins peuvent importer des CVE dans la KB.")
+
+    cve_id = (request.POST.get("cve_id") or "").strip().upper()
+    if not cve_id:
+        messages.error(request, "Veuillez saisir un identifiant CVE.")
+        return redirect("kb_list")
+
+    data = fetch_cve_data(cve_id)
+    if not data:
+        messages.error(request, "CVE introuvable ou invalide.")
+        return redirect("kb_list")
+
+    sev_map = {"LOW": 1, "MEDIUM": 2, "HIGH": 3, "CRITICAL": 3}
+    sev = sev_map.get((data.severity_label or "").strip().upper(), 1)
+
+    references = (data.references or []) + (data.sources or [])
+    references_text = "\n".join(dict.fromkeys(references))[:4000]
+
+    entry, created = KnowledgeBase.objects.get_or_create(
+        name=f"{data.cve_id} - {data.title or data.cve_id}"[:255],
+        defaults={
+            "category": KBCategory.WEB,
+            "default_severity": sev,
+            "description": data.description or "",
+            "recommendation": "",
+            "references": references_text,
+        },
+    )
+    if not created:
+        # Mise à jour légère pour garder la fiche fraiche
+        entry.description = data.description or entry.description
+        entry.default_severity = sev
+        if references_text:
+            entry.references = references_text
+        entry.save(update_fields=["description", "default_severity", "references", "updated_at"])
+        messages.success(request, f"Fiche KB mise à jour pour {data.cve_id}.")
+    else:
+        messages.success(request, f"Fiche KB créée pour {data.cve_id}.")
+
+    return redirect("kb_detail", entry_id=entry.id)
 
 
 @login_required

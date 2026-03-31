@@ -6,31 +6,83 @@
         <h1 class="h3 mb-1">Base de connaissance</h1>
         <p class="text-muted mb-0">Fiches vulnérabilités consultables par tous.</p>
     </div>
-    {% if request.user.role == "admin" %}
-        <a class="btn btn-primary" href="{% url 'kb_create' %}">Nouvelle fiche</a>
-    {% endif %}
+    <div class="d-flex gap-2">
+        {% if request.user.role == "admin" %}
+        <form method="post" action="{% url 'kb_import_from_cve' %}" class="d-flex gap-2 align-items-center">
+            {% csrf_token %}
+            <input type="text" name="cve_id" class="form-control form-control-sm" placeholder="CVE-2024-12345">
+            <button type="submit" class="btn btn-sm btn-outline-primary">Importer CVE</button>
+        </form>
+        <a class="btn btn-primary btn-sm" href="{% url 'kb_create' %}">Nouvelle fiche</a>
+        {% endif %}
+    </div>
 </div>
 
-<div class="row g-3">
-    {% for entry in entries %}
-        <div class="col-md-6 col-xl-4">
-            <div class="card h-100 shadow-sm card-hover border-0">
-                <div class="card-body">
-                    <h2 class="h5 mb-2">
-                        <a class="text-decoration-none" href="{% url 'kb_detail' entry.id %}">{{ entry.name }}</a>
-                    </h2>
-                    <p class="mb-1"><strong>Catégorie :</strong> {{ entry.get_category_display }}</p>
-                    <p class="mb-0"><strong>Sévérité :</strong> {{ entry.get_default_severity_display }}</p>
-                </div>
-                <div class="card-footer bg-white border-0 pt-0">
-                    <a class="btn btn-sm btn-outline-primary" href="{% url 'kb_detail' entry.id %}">Voir</a>
-                </div>
+<div class="card shadow-sm border-0 mb-3">
+    <div class="card-body">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-md-8">
+                <label class="form-label mb-1">Recherche CVE</label>
+                <input type="text" name="cve" value="{{ cve_query }}" class="form-control" placeholder="Ex: CVE-2024-3094">
             </div>
+            <div class="col-md-4">
+                <button type="submit" class="btn btn-outline-primary w-100">Rechercher</button>
+            </div>
+        </form>
+        {% if cve_error %}
+            <div class="alert alert-warning mt-3 mb-0">{{ cve_error }}</div>
+        {% endif %}
+        {% if cve_result %}
+            <div class="alert alert-light border mt-3 mb-0">
+                <div><strong>{{ cve_result.cve_id }}</strong> - {{ cve_result.title }}</div>
+                <div class="small text-muted mt-1">
+                    Sévérité: {{ cve_result.severity_label|default:"N/A" }} · CVSS: {{ cve_result.cvss_score|default:"N/A" }}
+                </div>
+                {% if cve_result.description %}
+                    <div class="mt-2">{{ cve_result.description }}</div>
+                {% endif %}
+                {% if cve_result.sources %}
+                    <div class="mt-2 small">
+                        {% for src in cve_result.sources %}
+                            <a href="{{ src }}" target="_blank" rel="noopener noreferrer">{{ src }}</a>{% if not forloop.last %}<br>{% endif %}
+                        {% endfor %}
+                    </div>
+                {% endif %}
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card shadow-sm border-0">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th scope="col" class="px-3">Entrée OWASP / KB</th>
+                        <th scope="col">Catégorie</th>
+                        <th scope="col">Sévérité</th>
+                        <th scope="col" class="text-end px-3">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for entry in entries %}
+                        <tr>
+                            <td class="px-3">{{ entry.name }}</td>
+                            <td>{{ entry.get_category_display }}</td>
+                            <td>{{ entry.get_default_severity_display }}</td>
+                            <td class="text-end px-3">
+                                <a class="btn btn-sm btn-outline-primary" href="{% url 'kb_detail' entry.id %}">Voir</a>
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr>
+                            <td colspan="4" class="px-3 py-3 text-muted">Aucune fiche pour le moment.</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
-    {% empty %}
-        <div class="col-12">
-            <div class="alert alert-secondary mb-0">Aucune fiche pour le moment.</div>
-        </div>
-    {% endfor %}
+    </div>
 </div>
 {% endblock %}

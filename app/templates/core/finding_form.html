@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Modifier finding{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-9">
+        <div class="card shadow-sm border-0">
+            <div class="card-body p-4">
+                <h1 class="h4 mb-3">Modifier le finding</h1>
+                <p class="text-muted">Rapport: {{ report.title }}</p>
+                <form method="post">
+                    {% csrf_token %}
+                    {{ form.as_p }}
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">Enregistrer</button>
+                        <a class="btn btn-outline-secondary" href="{% url 'report_detail' report.id %}">Retour</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

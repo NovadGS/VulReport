@@ -187,6 +187,10 @@ TRUSTED_PROXY_IPS = tuple(
     item.strip() for item in os.getenv("TRUSTED_PROXY_IPS", "").split(",") if item.strip()
 )
 
+# VirusTotal integration (optional)
+VIRUSTOTAL_API_KEY = os.getenv("VIRUSTOTAL_API_KEY", "").strip()
+VIRUSTOTAL_ENABLED = bool(VIRUSTOTAL_API_KEY)
+
 # Brute-force protection (django-axes)
 AXES_ENABLED = True
 AXES_FAILURE_LIMIT = int(os.getenv("AXES_FAILURE_LIMIT", "5"))

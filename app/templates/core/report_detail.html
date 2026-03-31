@@ -44,16 +44,14 @@
         <form method="post" action="{% url 'report_import_tool_report' report.id %}" enctype="multipart/form-data" class="row g-2 align-items-end">
             {% csrf_token %}
             <div class="col-md-9">
-                <label class="form-label" for="file">Importer un rapport (ZAP/Bandit JSON)</label>
-                <input id="file" name="file" type="file" class="form-control" accept=".json,application/json" required>
+                <label class="form-label" for="file">Importer un rapport (HTML/JSON/YML)</label>
+                <input id="file" name="file" type="file" class="form-control" accept=".json,.html,.htm,.yml,.yaml,.txt,application/json,text/html,text/plain,text/yaml,application/yaml,application/x-yaml" required>
             </div>
             <div class="col-md-3">
                 <button class="btn btn-outline-primary w-100" type="submit">Importer</button>
             </div>
         </form>
-        <p class="text-muted small mb-0 mt-2">
-            Formats supportés: Bandit JSON (`bandit -r app -f json -o bandit.json`), ZAP JSON (rapport JSON).
-        </p>
+        <p class="text-muted small mb-0 mt-2">Formats supportés: HTML, JSON, YML/YAML et TXT.</p>
     </div>
 </div>
 {% endif %}
@@ -125,8 +123,16 @@
                         <div class="fw-semibold">{{ f.title }}</div>
                         {% if f.cve_id %}<div class="text-muted small">{{ f.cve_id }}</div>{% endif %}
                     </div>
-                    <div class="text-muted small">
-                        Sévérité: {{ f.get_severity_level_display }}{% if f.cvss_score %} · CVSS {{ f.cvss_score }}{% endif %}
+                    <div class="text-end">
+                        <div class="text-muted small">
+                            Sévérité: {{ f.get_severity_level_display }}{% if f.cvss_score %} · CVSS {{ f.cvss_score }}{% endif %}
+                        </div>
+                        {% if can_edit %}
+                        <div class="d-flex gap-2 mt-1">
+                            <a href="{% url 'finding_edit' report.id f.id %}" class="btn btn-sm btn-outline-primary">Modifier</a>
+                            <a href="{% url 'finding_delete' report.id f.id %}" class="btn btn-sm btn-outline-danger">Supprimer</a>
+                        </div>
+                        {% endif %}
                     </div>
                 </div>
                 {% if f.description %}<p class="mb-2 mt-2">{{ f.description }}</p>{% endif %}

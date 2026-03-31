@@ -1,8 +1,11 @@
 from django import forms
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.forms import PasswordResetForm
+import ipaddress
+from urllib.parse import urlparse
 
 from .models import (
+    Finding,
     FindingComment,
     KnowledgeBase,
     Organization,
@@ -100,6 +103,25 @@ class ReportForm(forms.ModelForm):
     def save_m2m(self):
         return
 
+    def clean_company_logo_url(self):
+        value = (self.cleaned_data.get("company_logo_url") or "").strip()
+        if not value:
+            return value
+        parsed = urlparse(value)
+        host = (parsed.hostname or "").lower()
+        if parsed.scheme not in {"https", "http"}:
+            raise forms.ValidationError("Le logo doit utiliser une URL HTTP(S).")
+        if host in {"localhost", "127.0.0.1", "::1"}:
+            raise forms.ValidationError("Hote de logo non autorise.")
+        try:
+            ip = ipaddress.ip_address(host)
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+                raise forms.ValidationError("Adresse IP de logo non autorisee.")
+        except ValueError:
+            # Hostname non-IP: accepte.
+            pass
+        return value
+
 
 class KnowledgeBaseForm(forms.ModelForm):
     class Meta:
@@ -168,6 +190,35 @@ class FindingCommentForm(forms.ModelForm):
         }
 
 
+class FindingForm(forms.ModelForm):
+    class Meta:
+        model = Finding
+        fields = (
+            "title",
+            "cve_id",
+            "description",
+            "proof_poc",
+            "impact",
+            "recommendation",
+            "references",
+            "severity_level",
+            "cvss_score",
+            "display_order",
+        )
+        widgets = {
+            "title": forms.TextInput(attrs={"class": "form-control"}),
+            "cve_id": forms.TextInput(attrs={"class": "form-control", "placeholder": "CVE-2024-12345"}),
+            "description": forms.Textarea(attrs={"rows": 4, "class": "form-control"}),
+            "proof_poc": forms.Textarea(attrs={"rows": 3, "class": "form-control"}),
+            "impact": forms.Textarea(attrs={"rows": 3, "class": "form-control"}),
+            "recommendation": forms.Textarea(attrs={"rows": 3, "class": "form-control"}),
+            "references": forms.Textarea(attrs={"rows": 3, "class": "form-control"}),
+            "severity_level": forms.Select(attrs={"class": "form-select"}),
+            "cvss_score": forms.NumberInput(attrs={"class": "form-control", "step": "0.1", "min": "0", "max": "10"}),
+            "display_order": forms.NumberInput(attrs={"class": "form-control", "min": "0"}),
+        }
+
+
 class OrganizationCreateForm(forms.ModelForm):
     class Meta:
         model = Organization
@@ -176,12 +227,21 @@ class OrganizationCreateForm(forms.ModelForm):
 
 
 class OrganizationAddMemberForm(forms.Form):
-    username = forms.CharField(
+    identifier = forms.CharField(
         max_length=150,
-        widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "username du membre"}),
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-control",
+                "placeholder": "username ou ID membre (ex: VR-1A2B3C4D)",
+            }
+        ),
+        label="Membre (username ou ID)",
     )
     role = forms.ChoiceField(
         choices=OrganizationRole.choices,
         initial=OrganizationRole.MEMBER,
         widget=forms.Select(attrs={"class": "form-select"}),
     )
+
+    def clean_identifier(self):
+        return (self.cleaned_data.get("identifier") or "").strip()
