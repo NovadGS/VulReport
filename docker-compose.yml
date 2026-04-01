@@ -27,6 +27,8 @@ services:
       - ./app:/app
       - static_volume:/app/staticfiles
       - media_volume:/app/media
+      # Acces au daemon Docker pour le dashboard admin (stats conteneurs). A evaluer selon votre politique de securite.
+      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       db:
         condition: service_healthy

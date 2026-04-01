@@ -6,6 +6,7 @@ from django.core.exceptions import PermissionDenied
 from django.forms import modelform_factory
 from django.db.models import Q
 from django.core.mail import send_mail
+from django.http import JsonResponse
 from django.shortcuts import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -50,6 +51,7 @@ from .models import (
 import hashlib
 import hmac
 import secrets
+import time
 import json
 from urllib import request as _urlrequest, error as _urlerror
 import yaml
@@ -624,6 +626,109 @@ def _admin_model_config_or_404(model_slug: str):
     return config
 
 
+def _docker_cpu_percent_from_pair(s1: dict, s2: dict) -> float | None:
+    """CPU % entre deux echantillons consecutifs (precu_stats est souvent vide ou inutilisable)."""
+    try:
+        c1 = (s1.get("cpu_stats") or {}).get("cpu_usage", {}).get("total_usage", 0)
+        c2 = (s2.get("cpu_stats") or {}).get("cpu_usage", {}).get("total_usage", 0)
+        sys1 = (s1.get("cpu_stats") or {}).get("system_cpu_usage", 0)
+        sys2 = (s2.get("cpu_stats") or {}).get("system_cpu_usage", 0)
+        cpu_delta = c2 - c1
+        system_delta = sys2 - sys1
+        if system_delta <= 0 or cpu_delta < 0:
+            return None
+        cpu_stats2 = s2.get("cpu_stats") or {}
+        ncpus = cpu_stats2.get("online_cpus")
+        if not ncpus:
+            percpu = cpu_stats2.get("cpu_usage", {}).get("percpu_usage") or []
+            ncpus = len(percpu) if percpu else 1
+        pct = (cpu_delta / system_delta) * float(ncpus) * 100.0
+        if pct != pct:  # NaN
+            return None
+        return round(min(pct, 10000.0), 2)
+    except Exception:
+        return None
+
+
+def _docker_memory_from_stats(s: dict) -> tuple[float | None, float | None, float | None]:
+    """Retourne (mem_used_mb, mem_limit_mb, mem_percent)."""
+    mem = s.get("memory_stats") or {}
+    usage = mem.get("usage")
+    if usage is None:
+        usage = 0
+    limit = mem.get("limit") or 0
+    # Limite "illimitee" souvent = 2^63-1
+    if limit and limit > (1 << 62):
+        limit = 0
+    mem_used_mb = round(float(usage) / 1024 / 1024, 1)
+    mem_limit_mb = round(float(limit) / 1024 / 1024, 1) if limit else None
+    mem_percent = round(100.0 * float(usage) / float(limit), 1) if limit else None
+    return mem_used_mb, mem_limit_mb, mem_percent
+
+
+def _docker_runtime_snapshot() -> dict:
+    try:
+        import docker
+    except ImportError:
+        return {"ok": False, "error": "SDK Docker non installe (pip install docker).", "containers": [], "docker_version": ""}
+
+    try:
+        client = docker.from_env()
+        client.ping()
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": (
+                "Impossible de joindre le daemon Docker. "
+                "Sur l'hote, montez /var/run/docker.sock dans le service web (voir docker-compose). "
+                f"Detail: {exc}"
+            ),
+            "containers": [],
+            "docker_version": "",
+        }
+
+    try:
+        ver = client.version()
+        docker_version = ver.get("Version", "") if isinstance(ver, dict) else ""
+    except Exception:
+        docker_version = ""
+
+    containers_out: list[dict] = []
+    try:
+        for c in client.containers.list(all=True):
+            try:
+                image = c.image.tags[0] if getattr(c.image, "tags", None) else (c.image.id[:12] if c.image else "")
+            except Exception:
+                image = ""
+            row: dict = {"name": c.name, "status": c.status, "image": image}
+            try:
+                if c.status != "running":
+                    row["mem_used_mb"] = None
+                    row["mem_limit_mb"] = None
+                    row["mem_percent"] = None
+                    row["cpu_percent"] = None
+                else:
+                    s1 = c.stats(stream=False)
+                    time.sleep(0.12)
+                    s2 = c.stats(stream=False)
+                    mem_used_mb, mem_limit_mb, mem_percent = _docker_memory_from_stats(s2)
+                    row["mem_used_mb"] = mem_used_mb
+                    row["mem_limit_mb"] = mem_limit_mb
+                    row["mem_percent"] = mem_percent
+                    row["cpu_percent"] = _docker_cpu_percent_from_pair(s1, s2)
+            except Exception:
+                row["mem_used_mb"] = None
+                row["mem_limit_mb"] = None
+                row["mem_percent"] = None
+                row["cpu_percent"] = None
+            containers_out.append(row)
+        containers_out.sort(key=lambda x: x["name"])
+    except Exception as exc:
+        return {"ok": False, "error": str(exc), "containers": [], "docker_version": docker_version}
+
+    return {"ok": True, "error": None, "docker_version": docker_version, "containers": containers_out}
+
+
 def _admin_form_for_model(model):
     if model is User:
         return modelform_factory(
@@ -680,6 +785,16 @@ def admin_dashboard(request):
             "admin_links": admin_links,
         },
     )
+
+
+@login_required
+def admin_docker_stats(request):
+    if request.user.role != UserRole.ADMIN:
+        raise PermissionDenied("Acces reserve aux administrateurs.")
+    if request.method != "GET":
+        return JsonResponse({"ok": False, "error": "Method not allowed"}, status=405)
+    payload = _docker_runtime_snapshot()
+    return JsonResponse(payload)
 
 
 @login_required

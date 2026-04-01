@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}Dashboard Admin{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
@@ -7,6 +8,39 @@
         <p class="text-muted mb-0">Pilotage rapide + acces direct aux modules de gestion internes.</p>
     </div>
     <span class="badge text-bg-dark">Mode sans /admin</span>
+</div>
+
+<div
+    id="docker-stats-root"
+    class="card border-0 shadow-sm mb-4"
+    data-url="{% url 'admin_docker_stats' %}"
+>
+    <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <strong>Conteneurs Docker (temps reel)</strong>
+        <span id="docker-stats-meta" class="small text-muted"></span>
+    </div>
+    <div class="card-body p-0">
+        <div id="docker-stats-error" class="alert alert-warning m-3 d-none mb-0" role="alert"></div>
+        <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>Nom</th>
+                        <th>Etat</th>
+                        <th>Image</th>
+                        <th>CPU</th>
+                        <th>Memoire</th>
+                    </tr>
+                </thead>
+                <tbody id="docker-stats-tbody">
+                    <tr><td colspan="5" class="text-muted p-3">Chargement...</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <p class="small text-muted px-3 pb-3 mb-0">
+            Le service <code>web</code> doit avoir acces au socket Docker (<code>/var/run/docker.sock</code>) pour afficher ces donnees.
+        </p>
+    </div>
 </div>
 
 <div class="row g-3 mb-4">
@@ -80,4 +114,5 @@
         </div>
     </div>
 </div>
+<script src="{% static 'core/js/admin_docker_poll.js' %}"></script>
 {% endblock %}
