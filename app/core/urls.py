@@ -5,6 +5,15 @@ from . import views
 
 urlpatterns = [
     path("", views.home, name="home"),
+    path("admin-dashboard/", views.admin_dashboard, name="admin_dashboard"),
+    path("admin-dashboard/<slug:model_slug>/", views.admin_model_list, name="admin_model_list"),
+    path("admin-dashboard/<slug:model_slug>/create/", views.admin_model_create, name="admin_model_create"),
+    path("admin-dashboard/<slug:model_slug>/<int:object_id>/edit/", views.admin_model_edit, name="admin_model_edit"),
+    path(
+        "admin-dashboard/<slug:model_slug>/<int:object_id>/delete/",
+        views.admin_model_delete,
+        name="admin_model_delete",
+    ),
     path("share/<str:token>/", views.report_public_share, name="report_public_share"),
     path("account/settings/", views.account_settings, name="account_settings"),
     path("friends/", views.friends, name="friends"),

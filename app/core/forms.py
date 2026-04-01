@@ -16,16 +16,29 @@ from .models import (
 )
 
 
-class ViewerRegistrationForm(UserCreationForm):
+class RegistrationForm(UserCreationForm):
+    role = forms.ChoiceField(
+        choices=(
+            (UserRole.VIEWER, "Viewer"),
+            (UserRole.PENTESTER, "Pentester"),
+        ),
+        initial=UserRole.VIEWER,
+        widget=forms.Select(attrs={"class": "form-select"}),
+        label="Type de compte",
+    )
+
     class Meta(UserCreationForm.Meta):
         model = User
-        fields = ("username", "email")
+        fields = ("username", "email", "role")
 
     def save(self, commit=True):
         user = super().save(commit=False)
-        user.role = UserRole.VIEWER
+        selected_role = self.cleaned_data.get("role") or UserRole.VIEWER
+        user.role = selected_role
         user.is_staff = False
         user.is_active = False
+        user.mfa_required = selected_role == UserRole.PENTESTER
+        user.mfa_enrolled = False
         if commit:
             user.save()
         return user

@@ -32,6 +32,9 @@
                     <a class="btn btn-outline-light btn-sm" href="{% url 'organization_list' %}">Organisations</a>
                     <a class="btn btn-outline-light btn-sm" href="{% url 'account_settings' %}">Mon compte</a>
                 </div>
+                {% if user.role == "admin" %}
+                    <a class="btn btn-warning btn-sm" href="{% url 'admin_dashboard' %}">Dashboard Admin</a>
+                {% endif %}
             {% endif %}
             {% if user.is_authenticated %}
                 <span class="text-light me-3">{{ user.username }} - {{ user.get_role_display }}</span>

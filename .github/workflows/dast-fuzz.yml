@@ -1,0 +1,89 @@
+name: DAST and Fuzzing
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 2 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  zap-and-ffuf:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare CI .env
+        run: |
+          cat > .env << 'EOF'
+          DJANGO_SECRET_KEY=ci-only-secret-key-please-change
+          DJANGO_DEBUG=False
+          DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1
+          DJANGO_CSRF_TRUSTED_ORIGINS=http://localhost,http://127.0.0.1
+          DJANGO_SETTINGS_MODULE=config.settings
+          POSTGRES_DB=vulnreport
+          POSTGRES_USER=vulnreport
+          POSTGRES_PASSWORD=vulnreport
+          POSTGRES_HOST=db
+          POSTGRES_PORT=5432
+          SECURE_SSL_REDIRECT=False
+          SESSION_COOKIE_SECURE=False
+          CSRF_COOKIE_SECURE=False
+          EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend
+          EOF
+
+      - name: Start stack
+        run: docker compose up -d --build
+
+      - name: Wait for app
+        run: |
+          for i in {1..30}; do
+            if curl -fsS http://localhost/ > /dev/null; then
+              echo "App is up"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "App did not start in time"
+          docker compose logs --tail 200
+          exit 1
+
+      - name: OWASP ZAP baseline (DAST)
+        run: |
+          mkdir -p reports
+          docker run --rm --network host \
+            -v "${PWD}/reports:/zap/wrk:rw" \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py -t http://localhost/ -r zap-report.html -J zap-report.json -I
+
+      - name: Install ffuf
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffuf
+
+      - name: Run ffuf (basic content discovery)
+        run: |
+          mkdir -p reports
+          cat > wordlist.txt << 'EOF'
+          admin
+          login
+          register
+          api
+          dashboard
+          secret
+          backup
+          .git
+          EOF
+          ffuf -w wordlist.txt -u http://localhost/FUZZ -mc 200,204,301,302,307,401,403 -of json -o reports/ffuf.json
+
+      - name: Upload DAST/Fuzz reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: dast-fuzz-reports
+          path: reports
+
+      - name: Shutdown stack
+        if: always()
+        run: docker compose down -v
