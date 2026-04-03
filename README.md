@@ -91,6 +91,41 @@ Puis attribuer les permissions via l’admin Django selon le cahier des charges.
 - SCA :
   - `pip-audit -r requirements.txt`
 
+## CI/CD securise (GitHub Actions)
+
+Deux pipelines sont configurees :
+
+- `security-ci.yml` (push/PR sur `main`)
+  - Semgrep (SAST + CI rules)
+  - Bandit (SAST Python)
+  - pip-audit (dependances Python)
+  - GitLeaks (secrets)
+  - Trivy (scan image Docker)
+  - Snyk (dependances, si `SNYK_TOKEN` configure)
+  - SonarQube (si `SONAR_TOKEN` + `SONAR_HOST_URL` configures)
+
+- `dast-fuzz.yml` (manuel + nightly)
+  - OWASP ZAP baseline (DAST)
+  - FFUF (fuzzing simple discovery)
+  - publication des rapports en artifacts
+
+- `cd-deploy.yml` (CD)
+  - Build + push image Docker vers GHCR
+  - Deploiement SSH optionnel (si secrets SSH presents)
+
+### Secrets GitHub a configurer
+
+Dans `Settings > Secrets and variables > Actions` :
+
+- `SNYK_TOKEN` (obligatoire pour job Snyk)
+- `SONAR_TOKEN` (obligatoire pour SonarQube)
+- `SONAR_HOST_URL` (URL de ton serveur SonarQube)
+- `SSH_HOST`, `SSH_USER`, `SSH_PRIVATE_KEY` (optionnel pour etape de deploy)
+
+### Burp Suite
+
+Burp Suite est conserve pour les tests manuels (phase pentest), pas execute dans la CI par defaut.
+
 ## Push Git
 
 ```bash

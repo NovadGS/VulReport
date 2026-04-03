@@ -1,0 +1,108 @@
+name: Security CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  sast-and-sca:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install bandit pip-audit
+
+      - name: Semgrep (SAST + CI rules)
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: >-
+            p/security-audit
+            p/python
+            p/django
+            p/secrets
+
+      - name: Bandit (SAST Python)
+        run: bandit -r app -f txt
+
+      - name: pip-audit (SCA Python deps)
+        run: pip-audit -r requirements.txt
+
+      - name: GitLeaks (secrets)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  trivy-image-scan:
+    runs-on: ubuntu-latest
+    needs: sast-and-sca
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t vulnreport:${{ github.sha }} .
+
+      - name: Trivy scan image (high/critical)
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: vulnreport:${{ github.sha }}
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: "os,library"
+          severity: "HIGH,CRITICAL"
+
+  snyk-dependencies:
+    runs-on: ubuntu-latest
+    if: ${{ secrets.SNYK_TOKEN != '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Snyk
+        run: npm install -g snyk
+
+      - name: Snyk test (dependencies)
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          snyk auth "${SNYK_TOKEN}"
+          snyk test --file=requirements.txt --package-manager=pip
+
+  sonarqube:
+    runs-on: ubuntu-latest
+    if: ${{ secrets.SONAR_TOKEN != '' && secrets.SONAR_HOST_URL != '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v2
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}

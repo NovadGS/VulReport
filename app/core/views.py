@@ -3,8 +3,10 @@ from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.tokens import default_token_generator
 from django.core.exceptions import PermissionDenied
+from django.forms import modelform_factory
 from django.db.models import Q
 from django.core.mail import send_mail
+from django.http import JsonResponse
 from django.shortcuts import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -24,11 +26,12 @@ from .forms import (
     OrganizationAddMemberForm,
     OrganizationCreateForm,
     ReportForm,
-    ViewerRegistrationForm,
+    RegistrationForm,
 )
 from .cve_sources import fetch_cve_data
 from .mfa import build_totp_enrollment, get_or_create_totp_device, verify_totp_code
 from .models import (
+    AuditLog,
     Finding,
     FindingComment,
     FriendRequest,
@@ -43,10 +46,12 @@ from .models import (
     TopDevice,
     User,
     UserRole,
+    WebAuthnCredential,
 )
 import hashlib
 import hmac
 import secrets
+import time
 import json
 from urllib import request as _urlrequest, error as _urlerror
 import yaml
@@ -504,9 +509,10 @@ def register_viewer(request):
         return redirect("home")
 
     if request.method == "POST":
-        form = ViewerRegistrationForm(request.POST)
+        form = RegistrationForm(request.POST)
         if form.is_valid():
             user = form.save()
+            account_label = "Pentester" if user.role == UserRole.PENTESTER else "Viewer"
             uid = urlsafe_base64_encode(force_bytes(user.pk))
             token = default_token_generator.make_token(user)
             activation_link = request.build_absolute_uri(
@@ -514,7 +520,7 @@ def register_viewer(request):
             )
             message = (
                 "Bonjour,\n\n"
-                "Votre compte Viewer VulnReport a ete cree.\n"
+                f"Votre compte {account_label} VulnReport a ete cree.\n"
                 "Veuillez confirmer votre compte en cliquant sur ce lien :\n"
                 f"{activation_link}\n\n"
                 "Si vous n'etes pas a l'origine de cette demande, ignorez cet email."
@@ -536,12 +542,15 @@ def register_viewer(request):
                 return render(request, "registration/register.html", {"form": form})
             messages.success(
                 request,
-                "Compte cree. Un email de confirmation a ete envoye pour activer votre acces.",
+                (
+                    "Compte cree. Un email de confirmation a ete envoye pour activer votre acces. "
+                    "Pour un compte Pentester, la configuration TOTP sera demandee a la premiere connexion."
+                ),
             )
             return redirect("login")
         messages.error(request, "Le formulaire contient des erreurs. Verifiez les champs puis reessayez.")
     else:
-        form = ViewerRegistrationForm()
+        form = RegistrationForm()
 
     return render(request, "registration/register.html", {"form": form})
 
@@ -591,6 +600,290 @@ def home(request):
     reports = _report_queryset_for_user(request.user)[:30]
     can_create = request.user.role in {UserRole.ADMIN, UserRole.PENTESTER}
     return render(request, "core/home.html", {"reports": reports, "can_create": can_create})
+
+
+def _admin_model_registry():
+    return {
+        "users": {"label": "Utilisateurs", "model": User},
+        "reports": {"label": "Rapports", "model": Report},
+        "findings": {"label": "Findings", "model": Finding},
+        "finding-comments": {"label": "Commentaires findings", "model": FindingComment},
+        "knowledge-base": {"label": "Base de connaissance", "model": KnowledgeBase},
+        "organizations": {"label": "Organisations", "model": Organization},
+        "organization-memberships": {"label": "Membres organisations", "model": OrganizationMembership},
+        "report-shares": {"label": "Partages rapports", "model": ReportOrganizationShare},
+        "audit-logs": {"label": "Logs audit", "model": AuditLog, "readonly": True},
+        "friend-requests": {"label": "Demandes d'amis", "model": FriendRequest},
+        "top-devices": {"label": "Devices TOTP", "model": TopDevice},
+        "webauthn-credentials": {"label": "Credentials WebAuthn", "model": WebAuthnCredential},
+    }
+
+
+def _admin_model_config_or_404(model_slug: str):
+    config = _admin_model_registry().get(model_slug)
+    if not config:
+        raise PermissionDenied("Module admin introuvable.")
+    return config
+
+
+def _docker_cpu_percent_from_pair(s1: dict, s2: dict) -> float | None:
+    """CPU % entre deux echantillons consecutifs (precu_stats est souvent vide ou inutilisable)."""
+    try:
+        c1 = (s1.get("cpu_stats") or {}).get("cpu_usage", {}).get("total_usage", 0)
+        c2 = (s2.get("cpu_stats") or {}).get("cpu_usage", {}).get("total_usage", 0)
+        sys1 = (s1.get("cpu_stats") or {}).get("system_cpu_usage", 0)
+        sys2 = (s2.get("cpu_stats") or {}).get("system_cpu_usage", 0)
+        cpu_delta = c2 - c1
+        system_delta = sys2 - sys1
+        if system_delta <= 0 or cpu_delta < 0:
+            return None
+        cpu_stats2 = s2.get("cpu_stats") or {}
+        ncpus = cpu_stats2.get("online_cpus")
+        if not ncpus:
+            percpu = cpu_stats2.get("cpu_usage", {}).get("percpu_usage") or []
+            ncpus = len(percpu) if percpu else 1
+        pct = (cpu_delta / system_delta) * float(ncpus) * 100.0
+        if pct != pct:  # NaN
+            return None
+        return round(min(pct, 10000.0), 2)
+    except Exception:
+        return None
+
+
+def _docker_memory_from_stats(s: dict) -> tuple[float | None, float | None, float | None]:
+    """Retourne (mem_used_mb, mem_limit_mb, mem_percent)."""
+    mem = s.get("memory_stats") or {}
+    usage = mem.get("usage")
+    if usage is None:
+        usage = 0
+    limit = mem.get("limit") or 0
+    # Limite "illimitee" souvent = 2^63-1
+    if limit and limit > (1 << 62):
+        limit = 0
+    mem_used_mb = round(float(usage) / 1024 / 1024, 1)
+    mem_limit_mb = round(float(limit) / 1024 / 1024, 1) if limit else None
+    mem_percent = round(100.0 * float(usage) / float(limit), 1) if limit else None
+    return mem_used_mb, mem_limit_mb, mem_percent
+
+
+def _docker_runtime_snapshot() -> dict:
+    try:
+        import docker
+    except ImportError:
+        return {"ok": False, "error": "SDK Docker non installe (pip install docker).", "containers": [], "docker_version": ""}
+
+    try:
+        client = docker.from_env()
+        client.ping()
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": (
+                "Impossible de joindre le daemon Docker. "
+                "Sur l'hote, montez /var/run/docker.sock dans le service web (voir docker-compose). "
+                f"Detail: {exc}"
+            ),
+            "containers": [],
+            "docker_version": "",
+        }
+
+    try:
+        ver = client.version()
+        docker_version = ver.get("Version", "") if isinstance(ver, dict) else ""
+    except Exception:
+        docker_version = ""
+
+    containers_out: list[dict] = []
+    try:
+        for c in client.containers.list(all=True):
+            try:
+                image = c.image.tags[0] if getattr(c.image, "tags", None) else (c.image.id[:12] if c.image else "")
+            except Exception:
+                image = ""
+            row: dict = {"name": c.name, "status": c.status, "image": image}
+            try:
+                if c.status != "running":
+                    row["mem_used_mb"] = None
+                    row["mem_limit_mb"] = None
+                    row["mem_percent"] = None
+                    row["cpu_percent"] = None
+                else:
+                    s1 = c.stats(stream=False)
+                    time.sleep(0.12)
+                    s2 = c.stats(stream=False)
+                    mem_used_mb, mem_limit_mb, mem_percent = _docker_memory_from_stats(s2)
+                    row["mem_used_mb"] = mem_used_mb
+                    row["mem_limit_mb"] = mem_limit_mb
+                    row["mem_percent"] = mem_percent
+                    row["cpu_percent"] = _docker_cpu_percent_from_pair(s1, s2)
+            except Exception:
+                row["mem_used_mb"] = None
+                row["mem_limit_mb"] = None
+                row["mem_percent"] = None
+                row["cpu_percent"] = None
+            containers_out.append(row)
+        containers_out.sort(key=lambda x: x["name"])
+    except Exception as exc:
+        return {"ok": False, "error": str(exc), "containers": [], "docker_version": docker_version}
+
+    return {"ok": True, "error": None, "docker_version": docker_version, "containers": containers_out}
+
+
+def _admin_form_for_model(model):
+    if model is User:
+        return modelform_factory(
+            User,
+            fields=(
+                "username",
+                "email",
+                "first_name",
+                "last_name",
+                "role",
+                "is_active",
+                "is_staff",
+                "mfa_required",
+                "mfa_enrolled",
+                "top_enabled",
+                "company_name",
+            ),
+        )
+    excluded = {"id", "created_at", "updated_at"}
+    fields = [f.name for f in model._meta.fields if getattr(f, "editable", False) and f.name not in excluded]
+    if not fields:
+        fields = "__all__"
+    return modelform_factory(model, fields=fields)
+
+
+@login_required
+def admin_dashboard(request):
+    if request.user.role != UserRole.ADMIN:
+        raise PermissionDenied("Acces reserve aux administrateurs.")
+
+    stats = {
+        "users_total": User.objects.count(),
+        "users_pending_activation": User.objects.filter(is_active=False).count(),
+        "reports_total": Report.objects.count(),
+        "findings_total": Finding.objects.count(),
+        "organizations_total": Organization.objects.count(),
+        "kb_total": KnowledgeBase.objects.count(),
+    }
+    recent_users = User.objects.order_by("-date_joined")[:10]
+    recent_audit_logs = AuditLog.objects.select_related("actor").order_by("-created_at")[:20]
+
+    admin_links = [
+        {"label": item["label"], "url": reverse("admin_model_list", kwargs={"model_slug": slug})}
+        for slug, item in _admin_model_registry().items()
+    ]
+
+    return render(
+        request,
+        "core/admin_dashboard.html",
+        {
+            "stats": stats,
+            "recent_users": recent_users,
+            "recent_audit_logs": recent_audit_logs,
+            "admin_links": admin_links,
+        },
+    )
+
+
+@login_required
+def admin_docker_stats(request):
+    if request.user.role != UserRole.ADMIN:
+        raise PermissionDenied("Acces reserve aux administrateurs.")
+    if request.method != "GET":
+        return JsonResponse({"ok": False, "error": "Method not allowed"}, status=405)
+    payload = _docker_runtime_snapshot()
+    return JsonResponse(payload)
+
+
+@login_required
+def admin_model_list(request, model_slug: str):
+    if request.user.role != UserRole.ADMIN:
+        raise PermissionDenied("Acces reserve aux administrateurs.")
+    config = _admin_model_config_or_404(model_slug)
+    model = config["model"]
+    objects = model.objects.all().order_by("-id")[:200]
+    fields = [f.name for f in model._meta.fields][:8]
+    rows = []
+    for obj in objects:
+        values = [getattr(obj, field, "") for field in fields]
+        rows.append({"id": obj.id, "values": values})
+    return render(
+        request,
+        "core/admin_model_list.html",
+        {
+            "model_slug": model_slug,
+            "model_label": config["label"],
+            "rows": rows,
+            "readonly": bool(config.get("readonly")),
+            "fields": fields,
+        },
+    )
+
+
+@login_required
+def admin_model_create(request, model_slug: str):
+    if request.user.role != UserRole.ADMIN:
+        raise PermissionDenied("Acces reserve aux administrateurs.")
+    config = _admin_model_config_or_404(model_slug)
+    if config.get("readonly"):
+        raise PermissionDenied("Ce module est en lecture seule.")
+    model = config["model"]
+    FormClass = _admin_form_for_model(model)
+    if request.method == "POST":
+        form = FormClass(request.POST, request.FILES)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f"{config['label']} cree avec succes.")
+            return redirect("admin_model_list", model_slug=model_slug)
+    else:
+        form = FormClass()
+    return render(
+        request,
+        "core/admin_model_form.html",
+        {"model_slug": model_slug, "model_label": config["label"], "form": form, "is_edit": False},
+    )
+
+
+@login_required
+def admin_model_edit(request, model_slug: str, object_id: int):
+    if request.user.role != UserRole.ADMIN:
+        raise PermissionDenied("Acces reserve aux administrateurs.")
+    config = _admin_model_config_or_404(model_slug)
+    if config.get("readonly"):
+        raise PermissionDenied("Ce module est en lecture seule.")
+    model = config["model"]
+    instance = get_object_or_404(model, pk=object_id)
+    FormClass = _admin_form_for_model(model)
+    if request.method == "POST":
+        form = FormClass(request.POST, request.FILES, instance=instance)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f"{config['label']} mis a jour.")
+            return redirect("admin_model_list", model_slug=model_slug)
+    else:
+        form = FormClass(instance=instance)
+    return render(
+        request,
+        "core/admin_model_form.html",
+        {"model_slug": model_slug, "model_label": config["label"], "form": form, "is_edit": True},
+    )
+
+
+@login_required
+@require_POST
+def admin_model_delete(request, model_slug: str, object_id: int):
+    if request.user.role != UserRole.ADMIN:
+        raise PermissionDenied("Acces reserve aux administrateurs.")
+    config = _admin_model_config_or_404(model_slug)
+    if config.get("readonly"):
+        raise PermissionDenied("Ce module est en lecture seule.")
+    model = config["model"]
+    instance = get_object_or_404(model, pk=object_id)
+    instance.delete()
+    messages.success(request, f"Element supprime dans {config['label']}.")
+    return redirect("admin_model_list", model_slug=model_slug)
 
 
 @login_required
