@@ -6,6 +6,11 @@
         <div class="card shadow-sm card-hover border-0">
             <div class="card-body">
                 <h1 class="h4 mb-3">Connexion</h1>
+                {% if messages %}
+                    {% for message in messages %}
+                        <div class="alert alert-danger" role="alert">{{ message }}</div>
+                    {% endfor %}
+                {% endif %}
                 <form method="post">
                     {% csrf_token %}
                     <div class="mb-3">
