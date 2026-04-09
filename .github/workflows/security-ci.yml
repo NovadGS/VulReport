@@ -58,15 +58,17 @@ jobs:
       - name: Construction de l'image Docker
         run: docker build -t vulnreport:${{ github.sha }} .
 
+      - name: Installation de Trivy
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq wget apt-transport-https gnupg
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor | sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
+          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb generic main" | sudo tee /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq trivy
+
       - name: Scan Trivy (vulnerabilites high/critical)
-        uses: aquasecurity/trivy-action@0.24.0
-        with:
-          image-ref: vulnreport:${{ github.sha }}
-          format: table
-          exit-code: "0"
-          ignore-unfixed: true
-          vuln-type: "os,library"
-          severity: "HIGH,CRITICAL"
+        run: trivy image --ignore-unfixed --vuln-type os,library --severity HIGH,CRITICAL --exit-code 0 --format table vulnreport:${{ github.sha }}
 
   analyse-snyk:
     name: Analyse dependances Snyk
