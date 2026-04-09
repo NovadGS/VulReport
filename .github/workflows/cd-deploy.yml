@@ -1,9 +1,9 @@
-name: CD Deploy
+name: Deploiement CD
 
 on:
   workflow_dispatch:
   workflow_run:
-    workflows: ["Security CI"]
+    workflows: ["Pipeline Securite CI"]
     types: [completed]
 
 permissions:
@@ -11,23 +11,24 @@ permissions:
   packages: write
 
 jobs:
-  build-and-push:
+  build-et-push:
+    name: Construction et push image Docker
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     outputs:
       image_tag: ${{ steps.meta.outputs.image_tag }}
     steps:
-      - name: Checkout
+      - name: Recuperation du code
         uses: actions/checkout@v4
 
-      - name: Log in to GHCR
+      - name: Connexion au registre GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push image
+      - name: Build et push de l'image
         id: meta
         run: |
           IMAGE="ghcr.io/${{ github.repository_owner }}/vulnreport:${{ github.sha }}"
@@ -35,11 +36,12 @@ jobs:
           docker build -t "$IMAGE" .
           docker push "$IMAGE"
 
-  deploy-server:
+  deploiement-serveur:
+    name: Deploiement sur le serveur
     runs-on: ubuntu-latest
-    needs: build-and-push
+    needs: build-et-push
     steps:
-      - name: Check SSH secrets
+      - name: Verification des secrets SSH
         id: check
         run: |
           if [ -z "${{ secrets.SSH_HOST }}" ] || [ -z "${{ secrets.SSH_USER }}" ] || [ -z "${{ secrets.SSH_PRIVATE_KEY }}" ]; then
@@ -48,7 +50,7 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Deploy via SSH
+      - name: Deploiement via SSH
         if: steps.check.outputs.skip == 'false'
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -56,11 +58,11 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            docker pull ${{ needs.build-and-push.outputs.image_tag }}
+            docker pull ${{ needs.build-et-push.outputs.image_tag }}
             docker stop vulnreport-web || true
             docker rm vulnreport-web || true
-            docker run -d --name vulnreport-web --env-file /opt/vulreport/.env -p 8000:8000 ${{ needs.build-and-push.outputs.image_tag }}
+            docker run -d --name vulnreport-web --env-file /opt/vulreport/.env -p 8000:8000 ${{ needs.build-et-push.outputs.image_tag }}
 
-      - name: Skip notice
+      - name: SSH non configure
         if: steps.check.outputs.skip == 'true'
-        run: echo "SSH deploy skipped - SSH_HOST/SSH_USER/SSH_PRIVATE_KEY not configured"
+        run: echo "Deploiement SSH ignore - secrets pas configures"

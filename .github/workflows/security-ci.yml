@@ -1,4 +1,4 @@
-name: Security CI
+name: Pipeline Securite CI
 
 on:
   push:
@@ -11,50 +11,54 @@ permissions:
   security-events: write
 
 jobs:
-  sast-and-sca:
+  analyse-code-et-deps:
+    name: Analyse SAST + SCA
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Recuperation du code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Set up Python
+      - name: Installation Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
+      - name: Installation des dependances projet
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install bandit pip-audit semgrep
 
-      - name: Semgrep (SAST + CI rules)
+      - name: Installation outils de securite
+        run: pip install bandit pip-audit 'semgrep>=1.90.0'
+
+      - name: Analyse statique Semgrep (SAST)
         run: semgrep scan --config p/security-audit --config p/python --config p/django --config p/secrets app/
 
-      - name: Bandit (SAST Python)
+      - name: Analyse statique Bandit (SAST Python)
         run: bandit -r app -f txt -ll
 
-      - name: pip-audit (SCA Python deps)
+      - name: Audit des dependances pip-audit (SCA)
         run: pip-audit -r requirements.txt
 
-      - name: GitLeaks (secrets)
+      - name: Detection de secrets GitLeaks
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  trivy-image-scan:
+  scan-image-docker:
+    name: Scan image Docker Trivy
     runs-on: ubuntu-latest
-    needs: sast-and-sca
+    needs: analyse-code-et-deps
     steps:
-      - name: Checkout
+      - name: Recuperation du code
         uses: actions/checkout@v4
 
-      - name: Build Docker image
+      - name: Construction de l'image Docker
         run: docker build -t vulnreport:${{ github.sha }} .
 
-      - name: Trivy scan image (high/critical)
+      - name: Scan Trivy (vulnerabilites high/critical)
         uses: aquasecurity/trivy-action@0.24.0
         with:
           image-ref: vulnreport:${{ github.sha }}
@@ -64,11 +68,12 @@ jobs:
           vuln-type: "os,library"
           severity: "HIGH,CRITICAL"
 
-  snyk-dependencies:
+  analyse-snyk:
+    name: Analyse dependances Snyk
     runs-on: ubuntu-latest
-    needs: sast-and-sca
+    needs: analyse-code-et-deps
     steps:
-      - name: Check Snyk token
+      - name: Verification token Snyk
         id: check
         run: |
           if [ -z "${{ secrets.SNYK_TOKEN }}" ]; then
@@ -77,21 +82,21 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Checkout
+      - name: Recuperation du code
         if: steps.check.outputs.skip == 'false'
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Installation Python
         if: steps.check.outputs.skip == 'false'
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install Snyk
+      - name: Installation Snyk CLI
         if: steps.check.outputs.skip == 'false'
         run: npm install -g snyk
 
-      - name: Snyk test (dependencies)
+      - name: Test des dependances avec Snyk
         if: steps.check.outputs.skip == 'false'
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
@@ -99,15 +104,16 @@ jobs:
           snyk auth "${SNYK_TOKEN}"
           snyk test --file=requirements.txt --package-manager=pip
 
-      - name: Skip notice
+      - name: Snyk non configure
         if: steps.check.outputs.skip == 'true'
-        run: echo "Snyk skipped - SNYK_TOKEN not configured"
+        run: echo "Snyk ignore - token pas configure"
 
-  sonarqube:
+  analyse-sonarqube:
+    name: Analyse qualite SonarQube
     runs-on: ubuntu-latest
-    needs: sast-and-sca
+    needs: analyse-code-et-deps
     steps:
-      - name: Check SonarQube tokens
+      - name: Verification tokens SonarQube
         id: check
         run: |
           if [ -z "${{ secrets.SONAR_TOKEN }}" ] || [ -z "${{ secrets.SONAR_HOST_URL }}" ]; then
@@ -116,19 +122,19 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Checkout
+      - name: Recuperation du code
         if: steps.check.outputs.skip == 'false'
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: SonarQube Scan
+      - name: Lancement scan SonarQube
         if: steps.check.outputs.skip == 'false'
         uses: SonarSource/sonarqube-scan-action@v2
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
-      - name: Skip notice
+      - name: SonarQube non configure
         if: steps.check.outputs.skip == 'true'
-        run: echo "SonarQube skipped - SONAR_TOKEN/SONAR_HOST_URL not configured"
+        run: echo "SonarQube ignore - tokens pas configures"
