@@ -31,7 +31,8 @@ jobs:
       - name: Build et push de l'image
         id: meta
         run: |
-          IMAGE="ghcr.io/${{ github.repository_owner }}/vulnreport:${{ github.sha }}"
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE="ghcr.io/${OWNER}/vulnreport:${{ github.sha }}"
           echo "image_tag=$IMAGE" >> "$GITHUB_OUTPUT"
           docker build -t "$IMAGE" .
           docker push "$IMAGE"
