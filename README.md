@@ -1,138 +1,155 @@
 # VulnReport
 
-Application Django de gestion de rapports de pentest, construite avec une approche Security by Design.
+Application Django de gestion de rapports de pentest avec base de connaissance offensive, construite avec une approche Security by Design.
 
 ## Stack technique
 
-- Python 3.11+
-- Django + ORM
-- PostgreSQL
-- Templates Django + Bootstrap 5
-- Docker + Docker Compose + Nginx
-- Bandit, pip-audit, WeasyPrint
+- Python 3.11 / Django 5
+- PostgreSQL 16
+- Gunicorn + Nginx (reverse proxy)
+- Docker + Docker Compose
+- Bootstrap 5 (templates Django)
+- WeasyPrint (export PDF)
 
-## Arborescence
+## Demarrage rapide
 
-```text
-VulnReport/
-├── .env
-├── .env.example
-├── .gitignore
-├── Dockerfile
-├── docker-compose.yml
-├── nginx/
-│   └── default.conf
-├── requirements.txt
-├── scripts/
-│   └── entrypoint.sh
-└── app/
-    ├── manage.py
-    ├── config/
-    │   ├── __init__.py
-    │   ├── asgi.py
-    │   ├── settings.py
-    │   ├── urls.py
-    │   └── wsgi.py
-    ├── core/
-    │   ├── __init__.py
-    │   ├── admin.py
-    │   ├── apps.py
-    │   ├── middleware.py
-    │   ├── migrations/
-    │   │   └── __init__.py
-    │   ├── models.py
-    │   ├── signals.py
-    │   ├── urls.py
-    │   └── views.py
-    └── templates/
-        ├── base.html
-        ├── core/
-        │   ├── home.html
-        │   └── report_detail.html
-        └── registration/
-            └── login.html
-```
+### Pre-requis
 
-## Sécurité implémentée (socle)
+- Docker et Docker Compose installes
+- Git
 
-- `AUTH_USER_MODEL` custom avec champ `role` (`admin`, `pentester`, `viewer`)
-- Modèles `Report` et `AuditLog` avec champs de traçabilité
-- Middleware d’audit pour capturer l’IP client
-- Logs automatiques de connexion/déconnexion (signaux)
-- Contrôle anti-IDOR dans la vue `report_detail`
-- En-têtes de sécurité Django et CSP stricte via `django-csp`
-- Préparation MFA/WebAuthn avec `django-mfa2`
-
-## Démarrage
-
-1. Mettre à jour les secrets dans `.env`.
-2. Lancer les conteneurs :
+### Lancement
 
 ```bash
-docker compose up --build
+git clone <url-du-repo>
+cd VulnReport
+cp .env.example .env   # adapter les valeurs si besoin
+docker compose up --build -d
 ```
 
-3. Ouvrir `http://localhost`.
+L'application est accessible sur `http://localhost`.
 
-## Initialisation RBAC recommandée
+### Comptes seed (crees automatiquement)
 
-Après le premier démarrage, créer les groupes Django :
+| Utilisateur | Mot de passe       | Role      |
+|-------------|-------------------|-----------|
+| admin       | VulnReport2025!   | Admin     |
+| pentester   | VulnReport2025!   | Pentester |
+| viewer      | VulnReport2025!   | Viewer    |
 
-- `Admin`
-- `Pentester`
-- `Viewer`
+Le mot de passe seed peut etre change via la variable `SEED_PASSWORD` dans `.env`.
 
-Puis attribuer les permissions via l’admin Django selon le cahier des charges.
+### Commandes utiles
 
-## Outils DevSecOps
+```bash
+# Lancer la stack
+docker compose up --build -d
 
-- SAST :
-  - `bandit -r app`
-- SCA :
-  - `pip-audit -r requirements.txt`
+# Voir les logs
+docker compose logs -f web
 
-## CI/CD securise (GitHub Actions)
+# Arreter
+docker compose down
 
-Deux pipelines sont configurees :
+# Reset complet (supprime les volumes/donnees)
+docker compose down -v
 
-- `security-ci.yml` (push/PR sur `main`)
-  - Semgrep (SAST + CI rules)
-  - Bandit (SAST Python)
-  - pip-audit (dependances Python)
-  - GitLeaks (secrets)
-  - Trivy (scan image Docker)
-  - Snyk (dependances, si `SNYK_TOKEN` configure)
-  - SonarQube (si `SONAR_TOKEN` + `SONAR_HOST_URL` configures)
+# Executer une commande Django
+docker compose exec web python manage.py <commande>
 
-- `dast-fuzz.yml` (manuel + nightly)
-  - OWASP ZAP baseline (DAST)
-  - FFUF (fuzzing simple discovery)
-  - publication des rapports en artifacts
+# Creer un superuser manuellement
+docker compose exec web python manage.py createsuperuser
+```
 
-- `cd-deploy.yml` (CD)
-  - Build + push image Docker vers GHCR
-  - Deploiement SSH optionnel (si secrets SSH presents)
+## Variables d'environnement
+
+Fichier `.env` a la racine du projet :
+
+| Variable | Description | Defaut |
+|----------|-------------|--------|
+| `DJANGO_SECRET_KEY` | Cle secrete Django (obligatoire) | - |
+| `DJANGO_DEBUG` | Mode debug | `False` |
+| `DJANGO_ALLOWED_HOSTS` | Hosts autorises (separes par virgule) | `localhost` |
+| `DJANGO_CSRF_TRUSTED_ORIGINS` | Origins CSRF | `http://localhost` |
+| `POSTGRES_DB` | Nom de la base | `vulnreport` |
+| `POSTGRES_USER` | Utilisateur PostgreSQL | `vulnreport` |
+| `POSTGRES_PASSWORD` | Mot de passe PostgreSQL | `vulnreport` |
+| `POSTGRES_HOST` | Hote PostgreSQL | `db` |
+| `POSTGRES_PORT` | Port PostgreSQL | `5432` |
+| `SEED_PASSWORD` | Mot de passe des comptes seed | `VulnReport2025!` |
+| `SECURE_SSL_REDIRECT` | Redirection HTTPS | `True` (prod) |
+| `SESSION_COOKIE_SECURE` | Cookie session secure | `True` (prod) |
+| `CSRF_COOKIE_SECURE` | Cookie CSRF secure | `True` (prod) |
+| `AXES_FAILURE_LIMIT` | Tentatives avant blocage | `5` |
+| `MFA_TOTP_ENCRYPTION_KEY` | Cle Fernet pour chiffrement TOTP | - |
+| `EMAIL_HOST` | Serveur SMTP | `smtp.gmail.com` |
+| `EMAIL_PORT` | Port SMTP | `587` |
+| `EMAIL_HOST_USER` | Utilisateur SMTP | - |
+| `EMAIL_HOST_PASSWORD` | Mot de passe SMTP | - |
+
+## Securite implementee
+
+- **Authentification** : sessions Django, cookies HttpOnly/Secure/SameSite
+- **Hashage** : Argon2id (recommande OWASP)
+- **RBAC** : 3 roles (Viewer, Pentester, Admin) avec controle d'acces strict
+- **MFA/TOTP** : double authentification avec pyotp + chiffrement Fernet
+- **Anti brute-force** : django-axes (blocage apres 5 tentatives)
+- **CSP** : Content Security Policy stricte via django-csp
+- **Headers securite** : X-Frame-Options, X-Content-Type-Options, HSTS, Referrer-Policy
+- **Validation** : mots de passe complexes (10 car. min, maj, min, special)
+- **Audit log** : tracabilite de toutes les actions sensibles
+- **Anti-IDOR** : verification ownership sur chaque vue
+
+## Architecture
+
+```
+VulnReport/
+├── .env / .env.example
+├── Dockerfile              # Multi-stage build
+├── docker-compose.yml      # web + db + nginx
+├── nginx/default.conf      # Reverse proxy + headers securite
+├── requirements.txt
+├── scripts/entrypoint.sh   # Migrations + collectstatic + seed
+└── app/
+    ├── manage.py
+    ├── config/             # Settings, URLs, WSGI
+    └── core/               # App principale
+        ├── models.py       # User, Report, Finding, KB, AuditLog...
+        ├── views.py        # Toutes les vues
+        ├── forms.py        # Formulaires
+        ├── middleware.py   # Audit + MFA guard
+        ├── mfa.py          # TOTP enrollment/verification
+        ├── cve_sources.py  # Lookup CVE via API MITRE
+        └── templates/      # Templates Django
+```
+
+## CI/CD (GitHub Actions)
+
+### Pipeline Securite CI (`security-ci.yml`)
+Declenchee a chaque push/PR sur `main` :
+- **Semgrep** : SAST (regles security-audit + python + django + secrets)
+- **Bandit** : SAST Python
+- **pip-audit** : SCA (vulnerabilites dans les dependances)
+- **GitLeaks** : detection de secrets commites
+- **Trivy** : scan de l'image Docker (vuln OS + libs)
+- **Snyk** : SCA avancee (si token configure)
+- **SonarQube** : qualite de code (si configure)
+
+### Tests DAST et Fuzzing (`dast-fuzz.yml`)
+Declenchee manuellement ou chaque lundi :
+- **OWASP ZAP** : scan baseline DAST
+- **ffuf** : fuzzing des endpoints
+
+### Deploiement CD (`cd-deploy.yml`)
+Declenchee apres la pipeline securite :
+- Build + push image Docker vers GHCR
+- Deploiement SSH optionnel
 
 ### Secrets GitHub a configurer
 
-Dans `Settings > Secrets and variables > Actions` :
-
-- `SNYK_TOKEN` (obligatoire pour job Snyk)
-- `SONAR_TOKEN` (obligatoire pour SonarQube)
-- `SONAR_HOST_URL` (URL de ton serveur SonarQube)
-- `SSH_HOST`, `SSH_USER`, `SSH_PRIVATE_KEY` (optionnel pour etape de deploy)
-
-### Burp Suite
-
-Burp Suite est conserve pour les tests manuels (phase pentest), pas execute dans la CI par defaut.
-
-## Push Git
-
-```bash
-git init
-git add .
-git commit -m "feat: bootstrap secure VulnReport stack and core models"
-git branch -M main
-git remote add origin <votre-url-repo>
-git push -u origin main
-```
+| Secret | Usage |
+|--------|-------|
+| `SNYK_TOKEN` | Analyse Snyk (optionnel) |
+| `SONAR_TOKEN` | SonarQube (optionnel) |
+| `SONAR_HOST_URL` | URL SonarQube (optionnel) |
+| `SSH_HOST`, `SSH_USER`, `SSH_PRIVATE_KEY` | Deploiement SSH (optionnel) |

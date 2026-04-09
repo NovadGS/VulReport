@@ -84,13 +84,20 @@
             {% if can_edit and report.status == "draft" %}
             <form method="post" action="{% url 'report_request_review' report.id %}">
                 {% csrf_token %}
-                <button class="btn btn-outline-warning btn-sm" type="submit">Passer en revue</button>
+                <button class="btn btn-outline-warning btn-sm" type="submit">Passer en cours</button>
             </form>
             {% endif %}
-            {% if request.user.role == "admin" and report.status == "in_review" %}
+            {% if request.user.role == "admin" and report.status == "in_progress" %}
             <form method="post" action="{% url 'report_approve' report.id %}">
                 {% csrf_token %}
-                <button class="btn btn-success btn-sm" type="submit">Valider le rapport</button>
+                <button class="btn btn-success btn-sm" type="submit">Finaliser le rapport</button>
+            </form>
+            {% endif %}
+            {% if can_edit and report.status == "final" %}
+            <form method="post" action="{% url 'report_approve' report.id %}">
+                {% csrf_token %}
+                <input type="hidden" name="publish" value="1">
+                <button class="btn btn-primary btn-sm" type="submit">Publier</button>
             </form>
             {% endif %}
         </div>

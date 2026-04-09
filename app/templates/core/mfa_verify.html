@@ -17,8 +17,11 @@
                            class="form-control" placeholder="123456" required autofocus>
                     <div class="mt-3 d-flex gap-2">
                         <button class="btn btn-primary" type="submit">Valider</button>
-                        <a class="btn btn-outline-secondary" href="{% url 'logout' %}">Se déconnecter</a>
                     </div>
+                </form>
+                <form method="post" action="{% url 'logout' %}" class="mt-2">
+                    {% csrf_token %}
+                    <button class="btn btn-outline-secondary" type="submit">Se déconnecter</button>
                 </form>
             </div>
         </div>

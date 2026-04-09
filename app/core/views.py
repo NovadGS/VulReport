@@ -795,9 +795,14 @@ def admin_dashboard(request):
         "findings_total": Finding.objects.count(),
         "organizations_total": Organization.objects.count(),
         "kb_total": KnowledgeBase.objects.count(),
+        "findings_low": Finding.objects.filter(severity_level=SeverityLevel.LOW).count(),
+        "findings_medium": Finding.objects.filter(severity_level=SeverityLevel.MEDIUM).count(),
+        "findings_high": Finding.objects.filter(severity_level=SeverityLevel.HIGH).count(),
+        "findings_critical": Finding.objects.filter(severity_level=SeverityLevel.CRITICAL).count(),
     }
     recent_users = User.objects.order_by("-date_joined")[:10]
     recent_audit_logs = AuditLog.objects.select_related("actor").order_by("-created_at")[:20]
+    recent_reports = Report.objects.select_related("author").order_by("-updated_at")[:10]
 
     admin_links = [
         {"label": item["label"], "url": reverse("admin_model_list", kwargs={"model_slug": slug})}
@@ -811,6 +816,7 @@ def admin_dashboard(request):
             "stats": stats,
             "recent_users": recent_users,
             "recent_audit_logs": recent_audit_logs,
+            "recent_reports": recent_reports,
             "admin_links": admin_links,
         },
     )
@@ -1286,16 +1292,16 @@ def report_request_review(request, report_id: int):
     report = get_object_or_404(Report, pk=report_id)
     _ensure_can_edit_report(request.user, report)
     if report.status == "draft":
-        report.status = "in_review"
+        report.status = "in_progress"
         report.save(update_fields=["status", "updated_at"])
         _audit(
             request,
             action="update",
             object_type="report_workflow",
             object_id=report.id,
-            metadata={"from": "draft", "to": "in_review"},
+            metadata={"from": "draft", "to": "in_progress"},
         )
-        messages.success(request, "Rapport passe en revue.")
+        messages.success(request, "Rapport passe en cours.")
     else:
         messages.warning(request, "Transition non autorisee depuis ce statut.")
     return redirect("report_detail", report_id=report.id)
@@ -1305,10 +1311,28 @@ def report_request_review(request, report_id: int):
 @require_POST
 def report_approve(request, report_id: int):
     report = get_object_or_404(Report, pk=report_id)
+    _ensure_can_edit_report(request.user, report)
+
+    # Transition Finalisé → Publié
+    if request.POST.get("publish") and report.status == "final":
+        report.status = "published"
+        report.is_public = True
+        report.save(update_fields=["status", "is_public", "updated_at"])
+        _audit(
+            request,
+            action="update",
+            object_type="report_workflow",
+            object_id=report.id,
+            metadata={"from": "final", "to": "published"},
+        )
+        messages.success(request, "Rapport publie.")
+        return redirect("report_detail", report_id=report.id)
+
+    # Transition En cours → Finalisé (admin only)
     if request.user.role != UserRole.ADMIN:
-        raise PermissionDenied("Seul un admin peut valider un rapport.")
-    if report.status != "in_review":
-        messages.warning(request, "Le rapport doit etre en revue.")
+        raise PermissionDenied("Seul un admin peut finaliser un rapport.")
+    if report.status != "in_progress":
+        messages.warning(request, "Le rapport doit etre en cours.")
         return redirect("report_detail", report_id=report.id)
     report.status = "final"
     report.approved_by = request.user
@@ -1319,20 +1343,20 @@ def report_approve(request, report_id: int):
         action="update",
         object_type="report_workflow",
         object_id=report.id,
-        metadata={"from": "in_review", "to": "final"},
+        metadata={"from": "in_progress", "to": "final"},
     )
     if report.author.email:
         send_mail(
-            subject=f"Rapport valide: {report.title}",
+            subject=f"Rapport finalise: {report.title}",
             message=(
                 f"Bonjour {report.author.username},\n\n"
-                f"Votre rapport '{report.title}' vient d'etre valide par {request.user.username}.\n"
+                f"Votre rapport '{report.title}' vient d'etre finalise par {request.user.username}.\n"
             ),
             from_email=settings.DEFAULT_FROM_EMAIL,
             recipient_list=[report.author.email],
             fail_silently=True,
         )
-    messages.success(request, "Rapport valide.")
+    messages.success(request, "Rapport finalise.")
     return redirect("report_detail", report_id=report.id)
 
 

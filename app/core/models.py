@@ -57,9 +57,9 @@ class User(AbstractUser):
 
 class ReportStatus(models.TextChoices):
     DRAFT = "draft", "Brouillon"
-    IN_REVIEW = "in_review", "En revue"
-    FINAL = "final", "Final"
-    ARCHIVED = "archived", "Archive"
+    IN_PROGRESS = "in_progress", "En cours"
+    FINAL = "final", "Finalisé"
+    PUBLISHED = "published", "Publié"
 
 
 class SeverityLevel(models.IntegerChoices):

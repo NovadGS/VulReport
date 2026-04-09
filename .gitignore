@@ -14,5 +14,4 @@ staticfiles/
 media/
 app/staticfiles/
 app/media/
-doc/
 suivi.md
