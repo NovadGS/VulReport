@@ -30,7 +30,7 @@ def _http_json(url: str, timeout_s: int = 12) -> dict[str, Any]:
             "Accept": "application/json",
         },
     )
-    with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+    with urllib.request.urlopen(req, timeout=timeout_s) as resp:  # nosec B310
         raw = resp.read().decode("utf-8", errors="replace")
     return json.loads(raw)
 

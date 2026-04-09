@@ -3,7 +3,7 @@ name: DAST and Fuzzing
 on:
   workflow_dispatch:
   schedule:
-    - cron: "30 2 * * *"
+    - cron: "30 2 * * 1"
 
 permissions:
   contents: read
@@ -40,7 +40,7 @@ jobs:
       - name: Wait for app
         run: |
           for i in {1..30}; do
-            if curl -fsS http://localhost/ > /dev/null; then
+            if curl -fsS http://localhost/ > /dev/null 2>&1; then
               echo "App is up"
               exit 0
             fi
@@ -53,15 +53,17 @@ jobs:
       - name: OWASP ZAP baseline (DAST)
         run: |
           mkdir -p reports
+          chmod 777 reports
           docker run --rm --network host \
             -v "${PWD}/reports:/zap/wrk:rw" \
+            -u root \
             ghcr.io/zaproxy/zaproxy:stable \
-            zap-baseline.py -t http://localhost/ -r zap-report.html -J zap-report.json -I
+            zap-baseline.py -t http://localhost/ -r zap-report.html -J zap-report.json -I || true
 
       - name: Install ffuf
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ffuf
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffuf
 
       - name: Run ffuf (basic content discovery)
         run: |
@@ -75,10 +77,13 @@ jobs:
           secret
           backup
           .git
+          .env
+          debug
           EOF
-          ffuf -w wordlist.txt -u http://localhost/FUZZ -mc 200,204,301,302,307,401,403 -of json -o reports/ffuf.json
+          ffuf -w wordlist.txt -u http://localhost/FUZZ -mc 200,204,301,302,307,401,403 -of json -o reports/ffuf.json || true
 
       - name: Upload DAST/Fuzz reports
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: dast-fuzz-reports

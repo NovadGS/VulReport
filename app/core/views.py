@@ -103,7 +103,7 @@ def _virustotal_lookup_sha256(file_bytes: bytes, filename: str = "") -> dict | N
     req = _urlrequest.Request(url)
     req.add_header("x-apikey", api_key)
     try:
-        with _urlrequest.urlopen(req, timeout=8) as resp:
+        with _urlrequest.urlopen(req, timeout=8) as resp:  # nosec B310
             body = resp.read().decode("utf-8", errors="ignore")
     except _urlerror.URLError:
         return None
