@@ -43,6 +43,8 @@ from .models import (
     OrganizationRole,
     Report,
     ReportOrganizationShare,
+    ReportStatus,
+    SeverityLevel,
     TopDevice,
     User,
     UserRole,
@@ -597,9 +599,36 @@ def _ensure_can_view_report(user, report: Report) -> None:
 
 @login_required
 def home(request):
-    reports = _report_queryset_for_user(request.user)[:30]
+    reports = _report_queryset_for_user(request.user)
+
+    q = (request.GET.get("q") or "").strip()
+    status = (request.GET.get("status") or "").strip()
+    severity = (request.GET.get("severity") or "").strip()
+
+    if q:
+        reports = reports.filter(
+            Q(title__icontains=q) | Q(author__username__icontains=q) | Q(context__icontains=q)
+        )
+    if status:
+        reports = reports.filter(status=status)
+    if severity:
+        try:
+            sev_int = int(severity)
+            reports = reports.filter(findings__severity_level=sev_int).distinct()
+        except (ValueError, TypeError):
+            pass
+
+    reports = reports[:30]
     can_create = request.user.role in {UserRole.ADMIN, UserRole.PENTESTER}
-    return render(request, "core/home.html", {"reports": reports, "can_create": can_create})
+    return render(request, "core/home.html", {
+        "reports": reports,
+        "can_create": can_create,
+        "q": q,
+        "current_status": status,
+        "current_severity": severity,
+        "status_choices": ReportStatus.choices,
+        "severity_choices": SeverityLevel.choices,
+    })
 
 
 def _admin_model_registry():
@@ -893,6 +922,7 @@ def report_detail(request, report_id: int):
     can_edit = request.user.role == UserRole.ADMIN or report.author_id == request.user.id
     findings = report.findings.prefetch_related("comments__author").all().order_by("display_order", "created_at")
     orgs = Organization.objects.filter(members=request.user).order_by("name")
+    kb_entries = KnowledgeBase.objects.all().order_by("name") if can_edit else []
     return render(
         request,
         "core/report_detail.html",
@@ -902,6 +932,7 @@ def report_detail(request, report_id: int):
             "findings": findings,
             "comment_form": FindingCommentForm(),
             "available_orgs": orgs,
+            "kb_entries": kb_entries,
         },
     )
 
@@ -1105,6 +1136,60 @@ def report_add_finding_from_cve(request, report_id: int):
         return redirect("report_detail", report_id=report.id)
     messages.success(request, f"Finding créé depuis {finding.cve_id}.")
     return redirect("report_detail", report_id=report.id)
+
+
+@login_required
+def finding_create(request, report_id: int):
+    report = get_object_or_404(Report.objects.select_related("author"), pk=report_id)
+    _ensure_can_view_report(request.user, report)
+    _ensure_can_edit_report(request.user, report)
+
+    if request.method == "POST":
+        form = FindingForm(request.POST)
+        if form.is_valid():
+            finding = form.save(commit=False)
+            finding.report = report
+            finding.save()
+            messages.success(request, "Finding ajouté.")
+            return redirect("report_detail", report_id=report.id)
+    else:
+        form = FindingForm()
+
+    return render(request, "core/finding_form.html", {"form": form, "report": report, "creating": True})
+
+
+@login_required
+def finding_from_kb(request, report_id: int, entry_id: int):
+    report = get_object_or_404(Report.objects.select_related("author"), pk=report_id)
+    _ensure_can_view_report(request.user, report)
+    _ensure_can_edit_report(request.user, report)
+    kb_entry = get_object_or_404(KnowledgeBase, pk=entry_id)
+
+    if request.method == "POST":
+        form = FindingForm(request.POST)
+        if form.is_valid():
+            finding = form.save(commit=False)
+            finding.report = report
+            finding.kb_entry = kb_entry
+            finding.save()
+            messages.success(request, f"Finding créé depuis la fiche KB « {kb_entry.name} ».")
+            return redirect("report_detail", report_id=report.id)
+    else:
+        form = FindingForm(initial={
+            "title": kb_entry.name,
+            "description": kb_entry.description,
+            "recommendation": kb_entry.recommendation,
+            "references": kb_entry.references,
+            "severity_level": kb_entry.default_severity,
+            "cvss_score": 0.0,
+        })
+
+    return render(request, "core/finding_form.html", {
+        "form": form,
+        "report": report,
+        "kb_entry": kb_entry,
+        "creating": True,
+    })
 
 
 @login_required
@@ -1479,6 +1564,14 @@ def cve_lookup(request):
 @login_required
 def kb_list(request):
     entries = KnowledgeBase.objects.all()
+
+    kb_q = (request.GET.get("kb_q") or "").strip()
+    kb_cat = (request.GET.get("category") or "").strip()
+    if kb_q:
+        entries = entries.filter(Q(name__icontains=kb_q) | Q(description__icontains=kb_q))
+    if kb_cat:
+        entries = entries.filter(category=kb_cat)
+
     cve_query = (request.GET.get("cve") or "").strip().upper()
     cve_result = None
     cve_error = ""
@@ -1493,6 +1586,9 @@ def kb_list(request):
         "core/kb_list.html",
         {
             "entries": entries,
+            "kb_q": kb_q,
+            "kb_cat": kb_cat,
+            "category_choices": KBCategory.choices,
             "cve_query": cve_query,
             "cve_result": cve_result,
             "cve_error": cve_error,

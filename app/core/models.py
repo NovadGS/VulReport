@@ -66,12 +66,20 @@ class SeverityLevel(models.IntegerChoices):
     LOW = 1, "Low"
     MEDIUM = 2, "Medium"
     HIGH = 3, "High"
+    CRITICAL = 4, "Critical"
 
 
 class KBCategory(models.TextChoices):
     WEB = "web", "Web"
     CRYPTO = "crypto", "Crypto"
     NETWORK = "network", "Network"
+    INJECTION = "injection", "Injection"
+    AUTH = "auth", "Broken Authentication"
+    XSS = "xss", "Cross-Site Scripting"
+    ACCESS_CONTROL = "access_control", "Broken Access Control"
+    MISCONFIG = "misconfig", "Security Misconfiguration"
+    COMPONENTS = "components", "Vulnerable Components"
+    LOGGING = "logging", "Logging & Monitoring"
 
 
 class Report(models.Model):

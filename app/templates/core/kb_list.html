@@ -21,11 +21,24 @@
 <div class="card shadow-sm border-0 mb-3">
     <div class="card-body">
         <form method="get" class="row g-2 align-items-end">
-            <div class="col-md-8">
-                <label class="form-label mb-1">Recherche CVE</label>
-                <input type="text" name="cve" value="{{ cve_query }}" class="form-control" placeholder="Ex: CVE-2024-3094">
-            </div>
             <div class="col-md-4">
+                <label class="form-label mb-1">Mot-clé</label>
+                <input type="text" name="kb_q" value="{{ kb_q }}" class="form-control" placeholder="Rechercher une fiche...">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label mb-1">Catégorie</label>
+                <select name="category" class="form-select">
+                    <option value="">Toutes</option>
+                    {% for val, label in category_choices %}
+                        <option value="{{ val }}" {% if kb_cat == val %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label mb-1">Recherche CVE</label>
+                <input type="text" name="cve" value="{{ cve_query }}" class="form-control" placeholder="CVE-2024-3094">
+            </div>
+            <div class="col-md-2">
                 <button type="submit" class="btn btn-outline-primary w-100">Rechercher</button>
             </div>
         </form>

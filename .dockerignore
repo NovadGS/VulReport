@@ -1,0 +1,14 @@
+.git
+.github
+.env
+.env.*
+__pycache__
+*.pyc
+*.pyo
+doc/
+*.md
+.vscode
+.idea
+node_modules
+reports/
+*.log

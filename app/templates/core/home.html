@@ -19,6 +19,38 @@
     {% endif %}
 </div>
 
+<div class="card shadow-sm border-0 mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label mb-1">Recherche</label>
+                <input type="text" name="q" value="{{ q }}" class="form-control" placeholder="Titre, auteur, contexte...">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label mb-1">Statut</label>
+                <select name="status" class="form-select">
+                    <option value="">Tous</option>
+                    {% for val, label in status_choices %}
+                        <option value="{{ val }}" {% if current_status == val %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label mb-1">Sévérité finding</label>
+                <select name="severity" class="form-select">
+                    <option value="">Toutes</option>
+                    {% for val, label in severity_choices %}
+                        <option value="{{ val }}" {% if current_severity == val|stringformat:"d" %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-outline-primary w-100">Filtrer</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <div class="row g-3">
     {% for report in reports %}
         <div class="col-md-6 col-xl-4">

@@ -28,6 +28,27 @@
     <div class="card-body p-4">
         <h2 class="h5 mb-3">Ajouter un finding</h2>
 
+        <div class="d-flex flex-wrap gap-2 mb-3">
+            <a href="{% url 'finding_create' report.id %}" class="btn btn-success">Ajouter manuellement</a>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label fw-semibold">Depuis la base de connaissance (KB)</label>
+            {% if kb_entries %}
+            <div class="list-group">
+                {% for entry in kb_entries %}
+                <a href="{% url 'finding_from_kb' report.id entry.id %}" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+                    {{ entry.name }} <span class="badge bg-secondary">{{ entry.get_category_display }}</span>
+                </a>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-muted small">Aucune fiche KB disponible.</p>
+            {% endif %}
+        </div>
+
+        <hr class="my-4">
+
         <form method="post" action="{% url 'report_add_finding_from_cve' report.id %}" class="row g-2 align-items-end">
             {% csrf_token %}
             <div class="col-md-6">
